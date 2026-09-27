@@ -1,12 +1,12 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import { t, LANGS, useI18n } from '@/i18n'
+import { t } from '@/i18n'
 import { appState } from '@/store'
 import { useProgress } from '@/composables/useProgress'
 import { useTasks } from '@/composables/useTasks'
 import { useNavigation } from '@/composables/useNavigation'
+import LangSwitcher from '@/components/shared/LangSwitcher.vue'
 
-const { switchLang } = useI18n()
 const { progressPct, awaitingCheckpoint, taskFailed, needsResume, resumeTask } = useProgress()
 const { stopTaskById, switchMode } = useTasks()
 const { goBack, goHome } = useNavigation()
@@ -83,13 +83,7 @@ async function onSwitchAuto() {
       </div>
 
       <div class="ml-auto flex items-center gap-2 shrink-0">
-        <select
-          class="glass-input rounded-lg px-2 py-1.5 text-xs cursor-pointer text-ink"
-          :title="t('langSwitch')"
-          @change="switchLang(($event.target as HTMLSelectElement).value)"
-        >
-          <option v-for="l in LANGS" :key="l.code" :value="l.code">{{ l.label }}</option>
-        </select>
+        <LangSwitcher compact />
         <span class="text-xs px-2.5 py-1 rounded-full border" :class="statusInfo.cls">
           {{ t(statusInfo.key) }}
         </span>
