@@ -110,7 +110,7 @@ async function submitAnchor() {
         <label class="block text-sm text-muted mb-1.5">{{ t('resolution') }}</label>
         <select v-model="form.resolution" class="w-full glass-input rounded-lg px-3 py-2.5 text-sm text-ink">
           <option value="768x1344">{{ t('resPortraitHD') }}</option>
-          <option value="1152x768">{{ t('resLandscape') }}</option>
+          <option value="1280x720">{{ t('resLandscape') }}</option>
           <option value="1024x1024">{{ t('resSquare') }}</option>
         </select>
       </div>

@@ -15,10 +15,10 @@ from core.api.error_collector import collect_error, collect_error_from_exception
 from core.api.key_manager import get_key_ring
 from core.api.rate_limiter import get_rate_limiter, get_video_submit_limiter
 from core.config import (
-    VIDEO_ASPECT_RATIOS,
     get_agnes_api_root,
     get_base_url_for_key,
     is_v25_video_model,
+    width_height_to_aspect_ratio,
 )
 from utils.image_normalizer import normalize_reference_path
 from utils.video import download_video
@@ -271,7 +271,7 @@ class AgnesVideoAPI:
             return 961   # 480p tier
 
     def _get_frame_config(self, duration: Optional[int] = None,
-                          width: int = 1152, height: int = 768) -> tuple:
+                          width: int = 1280, height: int = 720) -> tuple:
         d = duration or self.default_duration
         max_nf = self._get_max_frames(width, height)
         if d in DURATION_PRESETS:
@@ -563,8 +563,8 @@ class AgnesVideoAPI:
         prompt: str,
         reference_image_paths: List[str] = [],
         duration: Optional[int] = None,
-        width: int = 1152,
-        height: int = 768,
+        width: int = 1280,
+        height: int = 720,
         seed: Optional[int] = None,
         negative_prompt: Optional[str] = None,
         progress_callback=None,
@@ -587,8 +587,8 @@ class AgnesVideoAPI:
         prompt: str,
         reference_image_paths: List[str] = [],
         duration: Optional[int] = None,
-        width: int = 1152,
-        height: int = 768,
+        width: int = 1280,
+        height: int = 720,
         seed: Optional[int] = None,
         negative_prompt: Optional[str] = None,
         **kwargs,
@@ -649,31 +649,21 @@ class AgnesVideoAPI:
 
     @staticmethod
     def _width_height_to_aspect_ratio(width: int, height: int) -> str:
-        """将像素宽高映射到最接近的 2.5 系列 aspect_ratio 枚举。
+        """将像素宽高映射到 2.5 系列 aspect_ratio 枚举（委托 ``core.config``）。
 
-        找不到精确比例时取误差最小的档位（默认 16:9）。
+        映射规则已上提到 ``core.config.width_height_to_aspect_ratio``，供回归
+        校验脚本共用（保证「提交」与「校验」同一套规则）；此方法保留为类内
+        调用入口，行为与上提前完全一致。
         """
-        if not width or not height:
-            return "16:9"
-        ratio = width / height
-        best = "16:9"
-        best_dist = float("inf")
-        for ar in VIDEO_ASPECT_RATIOS:
-            w, h = ar.split(":")
-            target = int(w) / int(h)
-            dist = abs(ratio - target)
-            if dist < best_dist:
-                best_dist = dist
-                best = ar
-        return best
+        return width_height_to_aspect_ratio(width, height)
 
     async def _submit_video_v25(
         self,
         prompt: str,
         reference_image_paths: List[str],
         duration: Optional[int] = None,
-        width: int = 1152,
-        height: int = 768,
+        width: int = 1280,
+        height: int = 720,
         seed: Optional[int] = None,
         **kwargs,
     ) -> str:

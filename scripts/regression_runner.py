@@ -40,7 +40,7 @@ from typing import Any, Optional
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import requests
 
-from core.config import DEFAULT_TEXT_MODEL, get_selected_models, is_v25_video_model
+from core.config import DEFAULT_TEXT_MODEL, get_selected_models, is_v25_video_model, width_height_to_aspect_ratio
 
 # v6.2.1: 回归默认视频模型（2.5-flash 比例档位输出），可按需修改
 REGRESSION_VIDEO_MODEL = "agnes-video-2.5-flash"
@@ -1243,11 +1243,15 @@ def _validate_sync(dir_name: str, scenario: ScenarioConfig) -> dict:
             exp_h = sd.get("video_height", scenario.params.get("video_height", 1152))
             checks["F3_width"] = clip.w
             checks["F3_height"] = clip.h
-            # v6.2.1: 2.5 系列模型按比例档位输出（720P 基准、短边对齐），
-            # 绝对像素与输入不同（如 768x1152 → 704x960），改用宽高比校验（±15%）。
+            # v6.2.1: 2.5 系列模型按比例档位输出（720P 基准、短边对齐），绝对像素
+            # 与请求不同，故改用宽高比校验（±15%）。期望比例同样按
+            # width_height_to_aspect_ratio 从请求像素推导——若直接用请求像素比值，
+            # 768x1152（2:3，实际按 9:16 档输出）这类惯例档会因固有差异误判超差。
             video_model = get_selected_models().get("video", "")
             if is_v25_video_model(video_model):
-                exp_ratio = exp_w / max(exp_h, 1)
+                _ar = width_height_to_aspect_ratio(exp_w, exp_h)
+                _aw, _ah = _ar.split(":")
+                exp_ratio = int(_aw) / int(_ah)
                 act_ratio = clip.w / max(clip.h, 1)
                 checks["F3_resolution_matches"] = (
                     abs(act_ratio - exp_ratio) / max(exp_ratio, 1e-6) <= 0.15

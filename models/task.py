@@ -175,8 +175,8 @@ class BaseTaskState(BaseModel):
     creative_name: str = ""
     task_type: TaskType
     status: StepStatus = StepStatus.PENDING
-    video_width: int = 1152
-    video_height: int = 768
+    video_width: int = 1280
+    video_height: int = 720
     final_video_file: str = ""
 
     # 实时进度（轮询模式：pipeline _emit 时更新，前端通过 GET /api/tasks/{id} 读取）

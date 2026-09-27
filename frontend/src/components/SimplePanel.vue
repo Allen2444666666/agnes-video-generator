@@ -26,7 +26,7 @@ const resolution = ref('768x1152')
 
 const resolutions = [
   { value: '768x1152', label: 'resPortrait' },
-  { value: '1152x768', label: 'resLandscape' },
+  { value: '1280x720', label: 'resLandscape' },
   { value: '1024x1024', label: 'resSquare' },
 ]
 
