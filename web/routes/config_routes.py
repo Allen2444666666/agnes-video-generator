@@ -467,6 +467,9 @@ async def list_models(refresh: bool = False):
             "ok": True,
             "models": _MODEL_CACHE["models"],
             "cached": True,
+            # U8（v7.0）：暴露应用版本，前端据此判断「模型可见但能力表未适配」
+            # 是否因版本过旧（能力表随发版硬编码）
+            "app_version": APP_VERSION,
             "video_capabilities": get_video_model_capabilities(),
         }
     grouped = fetch_available_models(key)
@@ -476,6 +479,7 @@ async def list_models(refresh: bool = False):
         "ok": True,
         "models": grouped,
         "cached": False,
+        "app_version": APP_VERSION,
         "video_capabilities": get_video_model_capabilities(),
     }
 

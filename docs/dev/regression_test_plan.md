@@ -94,7 +94,7 @@
 |---|------|---------|---------|---------|---------|
 | F1 | 最终视频 | `{working_dir}/{task_dir}/final_video.mp4` | 文件存在、非空 | 自动 | `os.path.exists` 且 `os.path.getsize > 0` |
 | F2 | 视频时长 | — | 时长合理（> 0） | 自动 | `ffprobe` 或 `moviepy` 读取 duration |
-| F3 | 视频分辨率 | — | 匹配请求参数 | 自动 | `moviepy` 读取宽高；v2.0 按绝对像素 ±15% 容差；**2.5 系列按宽高比 ±15% 校验**（720P 比例档位输出，绝对像素与请求不同；期望比例同样经 `width_height_to_aspect_ratio` 从请求像素推导，避免 `768x1152` 这类惯例档因固有差异误判，见 4.2） |
+| F3 | 视频分辨率 | — | 匹配请求参数 | 自动 | **只用 ffprobe/moviepy 读产物容器（禁止用 `perf_params` 校验——它是推理内部尺寸，v2.0 请求 768x1152 时为 832x1088）**；v2.0 按绝对像素 ±15% 容差（标准档保真、非标准档被吸附，见 `pipeline_products.md` §1.6）；**2.5 系列按宽高比 ±15% 校验**（720P 比例档位输出，绝对像素与请求不同，如 `3:4` 实为 834x1112；期望比例同样经 `width_height_to_aspect_ratio` 从请求像素推导，避免 `768x1152` 这类惯例档因固有差异误判，见 4.2） |
 | F4 | 音频轨道 + 语音内容 | — | 视频包含音频轨道 + 语音内容 | 自动 | `moviepy` 检测 audio stream + `whisper` ASR |
 | F5 | 字幕可见性 | — | 视频画面中字幕正确显示 | 手动 | 播放查看 |
 | F6 | 字幕文本匹配 | — | 字幕文本与原文一致 | 自动 | ASR 转录与原文模糊匹配（> 30%） |
@@ -449,4 +449,44 @@ for name, color in [('test_ref.png', (100,150,200)), ('test_end.png', (200,150,1
 
 ---
 
-*文档版本：v3.4 | 更新日期：2026-08-31 | 变更：新增 PR #33 吸收场景（C5 阿拉伯语+tashkeel / M3 稿件参考图 / M4 preview 端点）*
+## 十一、v7.0 上游可靠性加固回归（增量）
+
+> 新增于 v7.0（`docs/plans/v7.0/upstream_error_handling_plan.md` U1–U8）。
+> 不进入 S1/A1–A2 权重计算，作为专项验证；事实依据见
+> `docs/dev/agnes_video_upstream_behavior.md`。
+
+### 11.1 单测（自动，`tests/test_upstream_error_handling.py`）
+
+| ID | 条目 | 验证要点 |
+|----|------|---------|
+| N1 | U1 队列满独立轨道 | mock 连续 5 次 `503 video_queue_full` 后成功 → 调用次数（6）可超过 `max_retries=3`；进度回调按 `("queue_full", n)` 递增 |
+| N2 | U1 队列预算到期 | 预算置 0 → `RuntimeError` 文案含 "queue"，不再是笼统 server error |
+| N3 | U1 普通 5xx 不扩容 | 非队列类 5xx 仍只 `max_retries` 次；`error_message` 透出 body `message`，`extra.upstream_code` 有值 |
+| N4 | U1 `fail_to_fetch_task` | 与 `video_queue_full` 同轨，第 2 次尝试成功 |
+| N5 | U2 错误提取 | `_upstream_error` 覆盖响应体 / 轮询 `error` 对象 / 脏 JSON；轮询 failed 文案含上游原文 + `code=500`；`is_remote_video_failure` 语义保持 |
+| N6 | U2 无 dict 字面量 | `collect_error` 的 `error_message` 不含 `{`，且含可读 message |
+| N7 | U3 躺倒签名 | `_needs_portrait_rotation_fix(1280,720,720,1280)=True`；方向一致 / 尺寸缺失 / 非法值均为 False |
+| N8 | U3 默认关闭 | 开关关闭或 `perf_params` 缺尺寸时不触发 `ffprobe`/`ffmpeg`；开启 + 2.5 系列时 `fix_rotation=True`，v2.0 不受影响 |
+| N9 | U5 进度不可信 | `progress` 恒 0（`internal_progress=100`）时仍正常完成并产出 URL |
+
+### 11.2 手动/实测场景
+
+| ID | 场景 | 验证要点 |
+|----|------|---------|
+| V1 | 队列饱和实测 | 2.5-flash 在饱和时段提交 → 进度面板出现「上游视频队列已满，排队重试中（第 N 次 / 已等 X 分钟）」；日志 `Queue full on ... queue retry #N`；不消耗普通 5xx 配额 |
+| V2 | 错误透出实测 | 构造上游 `status=failed` → 失败面板展示含 `code=` 的上游原文；`error_logs/*.json` 的 `error_message` 为可读文本 |
+| V3 | 竖屏方向实测 | 2.5-flash + 9:16 单场景任务：UI 提示可见；`AGNES_FIX_V25_PORTRAIT_ROTATION=1` 时日志出现 `[UpstreamRotate]` 且成片方向正确（`ffprobe` 容器与画面方向一致）；默认关闭时行为与升级前完全一致 |
+| V4 | 未适配模型提示 | 构造上游有、本地能力表无的视频模型 → 下拉项带 `⚠` + 未适配提示；不再静默按 v2.0 像素协议提交 |
+| V5 | 版本可见性 | 页脚显示 `版本 vX.Y.Z`；`GET /api/models` 返回 `app_version` |
+
+### 11.3 文档一致性
+
+| ID | 检查点 |
+|----|-------|
+| D1 | F3 校验口径含「禁止用 `perf_params` 校验产物分辨率」 |
+| D2 | `pipeline_products.md` §1.6/§1.7 与实测行为一致（标准档保真 / 非标准档吸附 / 9:16 躺倒） |
+| D3 | `faq.md` 含「0% 长时间等待」「15 分钟硬闸」「竖屏躺倒」「demo 与自托管能力对照」四条 |
+
+---
+
+*文档版本：v3.5 | 更新日期：2026-09-28 | 变更：新增 v7.0 上游可靠性加固增量回归（U1/U2/U3/U5/U8）+ F3 校验口径更新*

@@ -725,8 +725,10 @@ initCollapse()
         <div>
           <label class="block text-xs text-muted mb-1">{{ t('modelVideoLabel') }} (v6.2)</label>
           <select v-model="appState.models.video" class="flex-1 glass-input rounded-lg px-3 py-2.5 text-sm text-ink">
-            <option v-for="m in appState.modelListCache.video" :key="m" :value="m">{{ modelDisplayLabel(m) }}</option>
+            <option v-for="m in appState.modelListCache.video" :key="m" :value="m">{{ modelDisplayLabel(m) }}{{ vmCaps.isAdapted(m) ? '' : ' ⚠' }}</option>
           </select>
+          <!-- v7.0 U8：上游有、本地能力表无的模型显式提示（避免「模型可见档位不能用」） -->
+          <p v-if="appState.models.video && !vmCaps.isAdapted(appState.models.video)" class="text-xs text-amber-400 mt-1.5">{{ t('vmUnadaptedHint') }}</p>
           <p v-if="vmCaps.isPaidTag(appState.models.video)" class="text-xs text-amber-400 mt-1.5">{{ t('modelPaidHint') }}</p>
           <p v-else-if="vmCaps.priceText(appState.models.video)" class="text-xs text-green-400 mt-1.5">{{ vmCaps.priceText(appState.models.video) }}</p>
 

@@ -380,6 +380,10 @@ CATALOG: Dict[str, Dict[str, str]] = {
         "zh": "等待视频生成 {vid}...",
         "en": "Waiting for video generation {vid}...",
     },
+    "progress.video.queue_full": {
+        "zh": "上游视频队列已满，排队重试中（第 {n} 次 / 已等 {waited} 分钟）...",
+        "en": "Upstream video queue is full, retrying (attempt {n} / waited {waited} min)...",
+    },
     "progress.simple.completed": {
         "zh": "视频生成完成",
         "en": "Video generation complete",

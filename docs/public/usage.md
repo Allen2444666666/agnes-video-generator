@@ -96,6 +96,13 @@ This project is in early stage — corner cases may not be fully handled. Recomm
 2. Watch the **console logs** (the terminal running `server.py`) and be patient
 3. All key operations are logged for easy debugging
 
+### Upstream limits you should know (v7.0)
+
+- **Free queue saturation**: submissions can be rejected for 10+ minutes with `video_queue_full`. The app keeps retrying on a dedicated track (default 900s, `AGNES_VIDEO_QUEUE_RETRY_SECONDS`) and shows "waiting for the upstream queue" in the progress panel. Nothing is consumed by a rejected submit.
+- **~15-minute inference hard cut-off**: if upstream aborts a job, the failure message contains the upstream wording (e.g. `inference not finished after 15 minutes (code=500)`) — waiting longer will not produce a video.
+- **Video 2.5 Flash portrait (9:16) rotation defect**: upstream returns sideways frames for this one combination. The UI warns you when you pick it; use `16:9` / `3:4` / Video 2.0 portrait, or opt into automatic correction with `AGNES_FIX_V25_PORTRAIT_ROTATION=1`.
+- **Model capabilities ship with releases**: a model listed in the dropdown but marked `⚠` is not adapted by your current version — upgrade to use it. The running version is shown in the page footer.
+
 ### Log Reference
 
 All important operations are logged to the server console:
@@ -109,6 +116,8 @@ All important operations are logged to the server console:
 | `[TTS]` / `[Subtitle]` | Audio and subtitle generation |
 | `[Compositor]` | Video concatenation and processing |
 | `[AgnesImage]` / `[AgnesVideo]` / `[AgnesChat]` | AI API calls |
+| `[UpstreamRotate]` | 2.5-series portrait rotation correction (opt-in, v7.0) |
+| `[KeyRotation]` | Swapping API keys on HTTP 429 |
 | `[RateLimiter]` | Global rate limiter |
 | `[TaskManager]` | Task state persistence |
 | `[Screenwriter]` | Screenwriter Agent |

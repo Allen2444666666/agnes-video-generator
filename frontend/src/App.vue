@@ -241,6 +241,8 @@ async function autoReconnectRunningTask() {
             <a href="https://github.com/lcy362/flint" target="_blank" rel="noopener" class="text-muted hover:text-ink-2 transition-colors">{{ t('flintLinkLabel') }}</a>
             <a href="https://github.com/lcy362/agnes-video-generator" target="_blank" rel="noopener" class="text-muted hover:text-ink-2 transition-colors">📖 GitHub</a>
           </div>
+          <!-- v7.0 U8：暴露应用版本，便于判断「模型档位未适配是否因版本过旧」 -->
+          <p v-if="appState.appVersion" class="text-xs text-muted/70 mt-3">{{ t('footerVersion') }} v{{ appState.appVersion }}</p>
         </div>
       </footer>
     </div>

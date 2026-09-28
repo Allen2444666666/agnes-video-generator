@@ -377,6 +377,30 @@ class BasePipeline(ABC):
         """``translate(key, self._ui_lang(), **params)`` 的快捷方式。"""
         return translate(key, self._ui_lang(), **params)
 
+    def _submit_progress_callback(self, step: str, progress: float):
+        """U1（v7.0）：提交侧进度回调，供 ``AgnesVideoAPI.submit_video`` 使用。
+
+        队列类 503（``video_queue_full``）命中独立重试轨道时，经此回调把
+        「上游队列已满，排队重试中」实时推给前端（任务状态轮询读取）。
+        回调为同步函数（API 层在重试循环内直接调用），内部调度异步 ``_emit``。
+        """
+        def _cb(stage: str, n: int, waited: float) -> None:
+            if stage != "queue_full":
+                return
+            try:
+                asyncio.get_running_loop().create_task(self._emit(
+                    step, "running",
+                    self._t("progress.video.queue_full", n=n, waited=max(1, round(waited / 60))),
+                    progress,
+                ))
+            except RuntimeError:
+                # 无运行中事件循环（理论不可达）：降级日志
+                logger.warning(
+                    f"[Pipeline] Upstream video queue full, queue retry #{n} "
+                    f"(waited {waited:.0f}s)"
+                )
+        return _cb
+
     @abstractmethod
     async def run(self, state: BaseTaskState) -> str:
         """执行流水线，返回最终视频路径。"""

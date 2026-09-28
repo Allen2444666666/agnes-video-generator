@@ -160,6 +160,8 @@ class SimpleVideoPipeline(BasePipeline):
             seed=self._state.seed,
             negative_prompt=self._state.negative_prompt,
             video_size=getattr(self._state, "video_size", None) or "720P",
+            # U1（v7.0）：队列满时实时向前端推「排队重试中」
+            progress_callback=self._submit_progress_callback("video_gen", _PROGRESS_SUBMIT),
         )
 
         # 持久化 video_id + curl 命令

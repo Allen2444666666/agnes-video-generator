@@ -193,6 +193,11 @@ class VideoStepsMixin:
                 duration=self._scene_duration(scene_idx),
                 width=vw,
                 height=vh,
+                # U1（v7.0）：队列满时实时向前端推「排队重试中」
+                progress_callback=self._submit_progress_callback(
+                    "video_gen",
+                    _PROGRESS_CACHED_START + _PROGRESS_CACHED_SPAN * scene_idx / total,
+                ),
             )
             self._save_scene_task(scene_dir, video_id)
             pending.append({
@@ -320,6 +325,11 @@ class VideoStepsMixin:
                     duration=self._scene_duration(scene_idx),
                     width=vw,
                     height=vh,
+                    # U1（v7.0）：队列满时实时向前端推「排队重试中」
+                    progress_callback=self._submit_progress_callback(
+                        "video_gen",
+                        _PROGRESS_CACHED_START + _PROGRESS_CACHED_SPAN * scene_idx / total,
+                    ),
                 )
                 self._save_scene_task(scene_dir, video_id)
                 existing_video_id = video_id
@@ -544,6 +554,11 @@ class VideoStepsMixin:
                 duration=self._scene_duration(scene_idx),
                 width=vw,
                 height=vh,
+                # U1（v7.0）：队列满时实时向前端推「排队重试中」
+                progress_callback=self._submit_progress_callback(
+                    "video_gen",
+                    _PROGRESS_KEYFRAME_SUBMIT_START + _PROGRESS_KEYFRAME_SUBMIT_SPAN * scene_idx / total,
+                ),
             )
             info["video_id"] = video_id
             info["already_submitted"] = True

@@ -6,6 +6,8 @@ import json
 import logging
 import mimetypes
 import os
+import random
+import subprocess
 import time
 from typing import List, Optional
 
@@ -49,6 +51,84 @@ def _adaptive_poll_interval(interval: int, poll_count: int) -> int:
     return min(interval, 20 + (poll_count // 5) * 5)
 
 
+# ── v7.0 上游可靠性加固（docs/plans/v7.0/upstream_error_handling_plan.md）──
+
+# 提交侧「队列类」瞬时错误的 body code（U1）：走独立退避轨道，不消耗普通 5xx
+# 的重试配额。实测 video_queue_full 可持续 12 分钟以上（连续 25 次被拒），
+# 而普通 5xx 退避（5 次 × 30s 递增）约 5.5 分钟就会放弃。
+_QUEUE_FULL_CODES = {"video_queue_full", "fail_to_fetch_task"}
+
+# 队列满退避间隔（秒）：固定基数 + 随机抖动（模块级常量，便于测试缩小）
+_QUEUE_RETRY_BASE_DELAY = 30.0
+_QUEUE_RETRY_JITTER = 30.0
+
+
+def _upstream_error(body) -> tuple:
+    """U2：从上游响应体统一提取 ``(code, message)``。
+
+    兼容两种输入：已解析的 dict（轮询结果）或 ``requests.Response``（提交响应）。
+
+    - 提交侧 5xx：body 形如 ``{"code": "video_queue_full", "message": "..."}``
+    - 轮询侧 ``status=failed``：``error`` 字段是对象 ``{"code", "message"}``
+
+    提取失败返回 ``("", "")``，由调用方回退到通用文案。
+    """
+    data = body
+    if body is not None and hasattr(body, "json"):
+        try:
+            data = body.json()
+        except Exception:
+            return "", (getattr(body, "text", "") or "").strip()[:200]
+    if isinstance(data, dict):
+        code = str(data.get("code") or "")
+        message = str(data.get("message") or "")
+        err = data.get("error")
+        if isinstance(err, dict):
+            code = code or str(err.get("code") or "")
+            if not message:
+                message = str(err.get("message") or "")
+        return code, message
+    if data is None:
+        return "", ""
+    return "", str(data)[:200]
+
+
+def _needs_portrait_rotation_fix(perf_w, perf_h, cont_w, cont_h) -> bool:
+    """U3：判定 2.5 系列「容器竖、像素横」的竖屏躺倒缺陷签名。
+
+    低代价代理判定（docs/dev/agnes_video_upstream_behavior.md §5.2）：
+    推理内部尺寸（``perf_params``）为横屏而产物容器为竖屏 → 命中。
+    任一尺寸缺失 / 方向一致 → 不命中（保守：宁可漏判，不可误转）。
+    """
+    try:
+        pw, ph, cw, ch = int(perf_w), int(perf_h), int(cont_w), int(cont_h)
+    except (TypeError, ValueError):
+        return False
+    if pw <= 0 or ph <= 0 or cw <= 0 or ch <= 0:
+        return False
+    return pw > ph and ch > cw
+
+
+def _probe_video_size(path: str) -> tuple:
+    """ffprobe 读取视频容器宽高（U3 判定用；失败返回 ``(None, None)``）。"""
+    try:
+        from core.compositor.ffmpeg_tool import resolve_binary
+        ffprobe = resolve_binary("ffprobe")
+        if not ffprobe:
+            return None, None
+        result = subprocess.run(
+            [ffprobe, "-v", "error", "-select_streams", "v:0",
+             "-show_entries", "stream=width,height", "-of", "json", path],
+            capture_output=True, text=True, timeout=60,
+        )
+        streams = json.loads(result.stdout).get("streams") or []
+        if streams:
+            return streams[0].get("width"), streams[0].get("height")
+    except Exception as e:
+        logger.debug(f"[UpstreamRotate] ffprobe failed: {e}")
+    return None, None
+
+
 class VideoTaskCancelled(RuntimeError):
     """用户停止任务导致的取消（优化路线图 0.2）。
 
@@ -88,10 +168,16 @@ def _write_json_cache(path: str, data: dict) -> None:
 
 
 class VideoOutput:
-    def __init__(self, fmt: str, ext: str, data: str):
+    def __init__(self, fmt: str, ext: str, data: str,
+                 perf_params: Optional[dict] = None,
+                 fix_rotation: bool = False):
         self.fmt = fmt
         self.ext = ext
         self.data = data
+        # U3：perf_params 为上游推理内部尺寸（非产物尺寸，勿用于产物校验）；
+        # fix_rotation 开启时保存后探测「容器竖、像素横」签名并做方向校正
+        self.perf_params = perf_params or {}
+        self.fix_rotation = fix_rotation
 
     async def save(self, path: str) -> None:
         """保存视频到 path（异步）。
@@ -108,6 +194,62 @@ class VideoOutput:
         else:
             with open(path, "wb") as f:
                 f.write(self.data if isinstance(self.data, bytes) else self.data.encode())
+        if self.fix_rotation:
+            self._maybe_fix_rotation(path)
+
+    def _maybe_fix_rotation(self, path: str) -> None:
+        """U3：2.5 系列竖屏（9:16）上游躺倒缺陷的探测式校正（默认关闭）。
+
+        判定签名见 ``_needs_portrait_rotation_fix``（容器竖 + 推理内部横）；
+        校正 = ffmpeg ``transpose=2``（逆时针 90°，实测可还原正确构图）。
+        任何一步失败保留原片并告警，不影响主流程。
+        开关：``AGNES_FIX_V25_PORTRAIT_ROTATION``（默认关闭，见计划 §三）。
+        """
+        perf = self.perf_params or {}
+        perf_w, perf_h = perf.get("width"), perf.get("height")
+        if perf_w is None or perf_h is None:
+            return
+        try:
+            cont_w, cont_h = _probe_video_size(path)
+            if not _needs_portrait_rotation_fix(perf_w, perf_h, cont_w, cont_h):
+                return
+            from core.compositor.ffmpeg_tool import resolve_binary
+            ffmpeg = resolve_binary("ffmpeg")
+            if not ffmpeg:
+                logger.warning("[UpstreamRotate] ffmpeg unavailable, keep original video")
+                return
+            tmp_path = path + ".rotated.mp4"
+            cmd = [
+                ffmpeg, "-y", "-i", path,
+                "-vf", "transpose=2",
+                "-c:v", "libx264", "-crf", "18", "-preset", "fast",
+                "-c:a", "copy",
+                tmp_path,
+            ]
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
+            if result.returncode != 0:
+                logger.warning(
+                    f"[UpstreamRotate] ffmpeg failed (rc={result.returncode}): "
+                    f"{result.stderr[:300]}"
+                )
+                _silent_remove(tmp_path)
+                return
+            os.replace(tmp_path, path)
+            logger.info(
+                f"[UpstreamRotate] Fixed portrait rotation: perf={perf_w}x{perf_h} "
+                f"container={cont_w}x{cont_h} -> transposed {os.path.basename(path)}"
+            )
+        except Exception as e:
+            logger.warning(f"[UpstreamRotate] rotation fix skipped: {e}")
+
+
+def _silent_remove(path: str) -> None:
+    """尽力删除临时文件（失败静默，供 U3 校正失败清理）。"""
+    try:
+        if os.path.exists(path):
+            os.remove(path)
+    except OSError:
+        pass
 
 
 class AgnesVideoAPI:
@@ -351,6 +493,9 @@ class AgnesVideoAPI:
                 resp.raise_for_status()
                 result = resp.json()
                 status = result.get("status", "")
+                # U5：progress 与 internal_progress 实测互相矛盾（可 0 vs 100）、
+                # started_at 可为 null——仅作日志展示，任何逻辑不得依赖其数值
+                # （自适应间隔 _adaptive_poll_interval 也只按次数推进）。
                 progress = result.get("progress", 0)
                 poll_count += 1
                 consecutive_failures = 0  # reset on success
@@ -366,15 +511,23 @@ class AgnesVideoAPI:
                     return result
 
                 if status in ("failed", "FAILED"):
-                    err = result.get("error") or "unknown error"
-                    error_msg = f"Video generation failed: {err}"
+                    # U2：error 是对象 {code, message}，统一提取而非字面量化
+                    code, message = _upstream_error(result)
+                    if not message:
+                        message = str(result.get("error") or "unknown error")
+                    error_msg = f"Video generation failed: {message}"
+                    if code:
+                        error_msg += f" (code={code})"
                     collect_error(
                         "video", "poll_task",
                         prompt=curl_cmd,
                         error_type="VideoFailed",
-                        error_message=error_msg,
+                        error_message=message,
                         response_body=resp.text,
-                        extra={"video_id": video_id[:16], "status": status},
+                        extra={
+                            "video_id": video_id[:16], "status": status,
+                            "upstream_code": code,
+                        },
                     )
                     raise RuntimeError(error_msg)
             except (requests.exceptions.RequestException, asyncio.TimeoutError) as e:
@@ -405,12 +558,18 @@ class AgnesVideoAPI:
             # 优化路线图 1.3：自适应轮询间隔（20s 起步，每 5 次 +5s，上限 interval）
             await asyncio.sleep(_adaptive_poll_interval(interval, poll_count))
 
-    async def _submit_with_retry(self, payload: dict, mode_desc: str) -> str:
+    async def _submit_with_retry(self, payload: dict, mode_desc: str,
+                                 progress_callback=None) -> str:
         frame_reductions_left = 2  # allow up to 2 frame-count reductions on 400
         attempt = 0
         rotations = 0
         ring = get_key_ring()
         max_rotations = len(ring) * self.max_retries
+        # U1：队列类 503（video_queue_full / fail_to_fetch_task）独立退避轨道
+        # —— 不计入普通 5xx 的 max_retries 配额，预算单独可配
+        queue_started = None   # 首次命中时的时间戳（time.monotonic）
+        queue_deadline = None  # queue_started + 预算秒数
+        queue_retries = 0
         while attempt < self.max_retries:
             if self.shutdown_event and self.shutdown_event.is_set():
                 raise VideoTaskCancelled("Video generation cancelled by user")
@@ -468,20 +627,94 @@ class AgnesVideoAPI:
                     continue
 
                 if resp.status_code >= 500:
+                    # U2：解析响应体的 code/message（此前统一丢成 "server error"）
+                    code, message = _upstream_error(resp)
+
+                    # U1：队列满走独立退避轨道（不计入普通 5xx 配额）
+                    if code in _QUEUE_FULL_CODES:
+                        if queue_deadline is None:
+                            from core.config import get_settings
+                            budget = get_settings().agnes_video_queue_retry_seconds
+                            queue_started = time.monotonic()
+                            queue_deadline = queue_started + budget
+                            logger.warning(
+                                f"[AgnesVideo] {mode_desc}: upstream queue full "
+                                f"(code={code}), entering queue retry track "
+                                f"(budget {budget}s)"
+                            )
+                        waited = time.monotonic() - queue_started
+                        if time.monotonic() >= queue_deadline:
+                            error_msg = (
+                                f"[AgnesVideo] {mode_desc}: upstream video queue "
+                                f"still full after {int(waited)}s (code={code}); "
+                                f"please retry later or switch model"
+                            )
+                            collect_error(
+                                "video", "submit_video",
+                                prompt=payload.get("prompt", ""),
+                                error_type=f"QueueFull_{code}",
+                                error_message=message or f"HTTP {resp.status_code}: {code}",
+                                status_code=resp.status_code,
+                                response_body=resp.text,
+                                retry_count=queue_retries,
+                                extra={
+                                    "mode": mode_desc, "upstream_code": code,
+                                    "waited_s": int(waited),
+                                },
+                            )
+                            raise RuntimeError(error_msg)
+                        delay = _QUEUE_RETRY_BASE_DELAY + random.uniform(0, _QUEUE_RETRY_JITTER)
+                        queue_retries += 1
+                        logger.warning(
+                            f"[AgnesVideo] Queue full on {mode_desc} (code={code}), "
+                            f"queue retry #{queue_retries} (waited {waited:.0f}s) "
+                            f"in {delay:.0f}s..."
+                        )
+                        collect_error(
+                            "video", "submit_video",
+                            prompt=payload.get("prompt", ""),
+                            error_type=f"QueueFull_{code}",
+                            error_message=message or f"HTTP {resp.status_code}: {code}",
+                            status_code=resp.status_code,
+                            response_body=resp.text,
+                            retry_count=queue_retries,
+                            extra={
+                                "mode": mode_desc, "upstream_code": code,
+                                "waited_s": int(waited),
+                            },
+                        )
+                        if progress_callback:
+                            try:
+                                # 签名与轮询回调对齐：(stage, n, waited_seconds)
+                                progress_callback("queue_full", queue_retries, waited)
+                            except Exception:
+                                logger.debug(
+                                    "[AgnesVideo] queue progress callback failed",
+                                    exc_info=True,
+                                )
+                        await asyncio.sleep(delay)
+                        continue
+
+                    # 普通 5xx：沿用 5 次退避配额
                     delay = self.retry_base_delay * (attempt + 1)
                     logger.warning(
-                        f"[AgnesVideo] {resp.status_code} server error on {mode_desc}, "
+                        f"[AgnesVideo] {resp.status_code} server error on {mode_desc}"
+                        f"{f' (code={code})' if code else ''}, "
                         f"retry {attempt + 1}/{self.max_retries} in {delay:.0f}s..."
+                    )
+                    error_message = (
+                        f"HTTP {resp.status_code}: {message}"
+                        if message else f"HTTP {resp.status_code}: server error"
                     )
                     collect_error(
                         "video", "submit_video",
                         prompt=payload.get("prompt", ""),
                         error_type=f"HTTP{resp.status_code}",
-                        error_message=f"HTTP {resp.status_code}: server error",
+                        error_message=error_message,
                         status_code=resp.status_code,
                         response_body=resp.text,
                         retry_count=attempt + 1,
-                        extra={"mode": mode_desc},
+                        extra={"mode": mode_desc, "upstream_code": code},
                     )
                     await asyncio.sleep(delay)
                     attempt += 1
@@ -578,6 +811,7 @@ class AgnesVideoAPI:
             height=height,
             seed=seed,
             negative_prompt=negative_prompt,
+            progress_callback=progress_callback,
             **kwargs,
         )
         return await self.wait_for_video(video_id, progress_callback)
@@ -591,6 +825,7 @@ class AgnesVideoAPI:
         height: int = 720,
         seed: Optional[int] = None,
         negative_prompt: Optional[str] = None,
+        progress_callback=None,
         **kwargs,
     ) -> str:
         # 2.5 系列模型（v6.2）：新参数协议（mode/seconds/size/aspect_ratio）
@@ -602,6 +837,7 @@ class AgnesVideoAPI:
                 width=width,
                 height=height,
                 seed=seed,
+                progress_callback=progress_callback,
                 **kwargs,
             )
         num_frames, frame_rate = self._get_frame_config(duration, width, height)
@@ -643,7 +879,7 @@ class AgnesVideoAPI:
 
         logger.info(f"[AgnesVideo] {mode_desc}: {prompt[:80]}...")
 
-        video_id = await self._submit_with_retry(payload, mode_desc)
+        video_id = await self._submit_with_retry(payload, mode_desc, progress_callback)
         logger.info(f"[AgnesVideo] Video submitted: {video_id[:20]}...")
         return video_id
 
@@ -665,6 +901,7 @@ class AgnesVideoAPI:
         width: int = 1280,
         height: int = 720,
         seed: Optional[int] = None,
+        progress_callback=None,
         **kwargs,
     ) -> str:
         """2.5 / 2.5-flash 新协议提交：mode / seconds / size / aspect_ratio。
@@ -717,14 +954,15 @@ class AgnesVideoAPI:
             mode_desc = "text-to-video"
 
         logger.info(f"[AgnesVideo] {mode_desc}: {prompt[:80]}...")
-        video_id = await self._submit_with_retry(payload, mode_desc)
+        video_id = await self._submit_with_retry(payload, mode_desc, progress_callback)
         logger.info(f"[AgnesVideo] Video submitted: {video_id[:20]}...")
         return video_id
 
     async def wait_for_video(self, video_id: str, progress_callback=None) -> VideoOutput:
         # 1.2：轮询总超时可经 AGNES_VIDEO_POLL_TIMEOUT 配置（3.5 RuntimeSettings 收敛）
         from core.config import get_settings
-        poll_timeout = get_settings().agnes_video_poll_timeout
+        settings = get_settings()
+        poll_timeout = settings.agnes_video_poll_timeout
         final = await self._poll_task(
             video_id, progress_callback=progress_callback,
             max_poll_duration=poll_timeout,
@@ -743,4 +981,14 @@ class AgnesVideoAPI:
                 raise RuntimeError(f"Agnes video: no URL in completed task: {final}")
 
         logger.info(f"[AgnesVideo] Done: {video_url[:80]}...")
-        return VideoOutput(fmt="url", ext="mp4", data=video_url)
+        # U3：携带推理内部尺寸 + 校正开关（默认关闭；仅 2.5 系列探测「容器竖、
+        # 像素横」签名后 ffmpeg transpose=2 校正，详见计划 §三）
+        fix_rotation = (
+            settings.agnes_fix_v25_portrait_rotation
+            and is_v25_video_model(self.model)
+        )
+        return VideoOutput(
+            fmt="url", ext="mp4", data=video_url,
+            perf_params=final.get("perf_params") or {},
+            fix_rotation=fix_rotation,
+        )

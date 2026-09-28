@@ -38,6 +38,55 @@ Most failures are caused by **transient factors** such as model service fluctuat
 
 If it still fails after several retries (≥ 2), the feedback area **auto-expands**, letting you copy the diagnostic info in one click and jump to a pre-filled GitHub Issue — no need to describe your environment manually.
 
+### The task sits at 0% for a very long time, then fails. Is my setup broken?
+
+Usually not. Agnes video has a **free queue that can be saturated for 10+ minutes** — during that window every submission is rejected with `503 video_queue_full` and *no* job is created (nothing is consumed, nothing is lost). This is upstream capacity, not your prompt or configuration.
+
+As of **v7.0**, the app handles this explicitly:
+
+- A queue-full rejection no longer counts against the normal retry budget. It moves to a **dedicated retry track** (default budget 900s, configurable via `AGNES_VIDEO_QUEUE_RETRY_SECONDS`), retrying every 30–60s, and the progress panel shows *"Upstream video queue is full, retrying (attempt N / waited X min)"*.
+- Only when that budget is exhausted do you get a failure — and the message now says the **queue was full**, instead of a generic `HTTP 503: server error`.
+
+What you can do: wait and retry later (off-peak hours help), switch to another model, or add more API keys (each key has its own quota).
+
+### Generation timed out after ~15 minutes with "inference not finished after 15 minutes"
+
+That message comes straight from the upstream inference backend. Agnes applies a **~15-minute hard cut-off per inference** — once a job trips it, the task is marked `failed` with that exact message and **waiting longer will not produce a video**. It is not a "needs more time" situation.
+
+Since **v7.0**, self-hosted installs surface this verbatim instead of hiding it:
+
+- The failure message keeps the upstream text and appends the upstream code, e.g. `Video generation failed: ComfyUI internal error: inference not finished after 15 minutes (code=500)`.
+- `error_logs/*.json` stores `message` (readable text) plus the `code` — no more raw dict literals.
+
+> **Why does self-hosting show a real error while the online demo just says "timed out"?** The demo applies its own client-side timeout earlier and rewrites the reason; self-hosting polls long enough (default 1800s, `AGNES_VIDEO_POLL_TIMEOUT`) to receive the genuine terminal state. A real error message is a *feature*: it tells you the difference between "not queued yet" and "queued but stuck". See `docs/dev/agnes_video_upstream_behavior.md` for the raw measurements.
+
+### Why is my Video 2.5 Flash portrait (9:16) video lying on its side?
+
+Known **upstream defect** (reported 2026-09): with `aspect_ratio=9:16` the API returns a portrait *container* (720×1280) but the pixels are a landscape composition rotated 90°, and there is no rotation metadata to correct it automatically. `16:9` and `3:4` are unaffected. Multi-scene pipelines carry the rotated frames into concatenation and subtitles, so the final video also looks sideways.
+
+Two ways out:
+
+1. **Avoid it (zero risk, default)**: pick `16:9` (or `3:4`), or use **Video 2.0** for portrait output. Since v7.0 the app shows an explicit hint when you select 9:16 on a 2.5-series model.
+2. **Let the app fix it**: set `AGNES_FIX_V25_PORTRAIT_ROTATION=1` before starting. After download the app detects the signature (landscape inference size in a portrait container) and transposes the clip once (`ffmpeg transpose=2`), logging `[UpstreamRotate]`. This is opt-in because it would over-rotate the day upstream fixes the bug.
+
+### The online demo offers a model or resolution that my local install doesn't have
+
+The **model list** is fetched live from the API, so a newly released model shows up in your dropdown as soon as upstream publishes it. But the **capability table** (which resolutions, durations and modes that model accepts) is shipped with each release — an older install can therefore list a model it doesn't fully understand.
+
+Since **v7.0**:
+
+- Models that the current version has no capability entry for are marked with `⚠` in the dropdown plus an explicit notice: *"This model is not adapted in the current version; generation may misbehave. Please upgrade and retry."* They are no longer silently submitted with the old v2.0 pixel protocol.
+- The app version is shown in the page footer and returned by `GET /api/models` (`app_version`), so you can tell at a glance whether you are on an old build.
+
+Upgrade with either:
+
+```bash
+git pull && ./start.sh                                  # source install
+docker compose pull && docker compose up -d             # Docker install
+```
+
+Quality differences between the demo and your install usually come from **model generation** itself (Video 2.5 Flash runs at roughly 4.1 Mb/s versus ~1.5 Mb/s for Video 2.0), not from a setting you missed. Pick `Video 2.5 Flash` in the model dropdown to match the demo.
+
 ### Generation worked for a long time, then failed at the last step with `getaddrinfo failed` / `[Errno 11004]`
 
 This is a **local DNS problem on your machine**, not a generation failure. Prompts and jobs go to the API endpoint, but the finished media is served from a separate output domain (`cos-platform-outputs.agnes-ai.cn` for videos, `platform-outputs.agnes-ai.space` for images). If your resolver cannot resolve that output domain, the job is already done on the server side while your machine cannot pull the file back — so the run dies right at download time and every retry dies at the same place.

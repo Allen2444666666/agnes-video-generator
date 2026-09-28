@@ -284,6 +284,8 @@ class MultiScenePipeline(BasePipeline):
                 duration=duration,
                 width=self._state.video_width,
                 height=self._state.video_height,
+                # U1（v7.0）：队列满时实时向前端推「排队重试中」
+                progress_callback=self._submit_progress_callback("video_gen", 0.40),
             )
             scene.video_id = video_id
             self._save_task_json(scene_dir, {"video_id": video_id})

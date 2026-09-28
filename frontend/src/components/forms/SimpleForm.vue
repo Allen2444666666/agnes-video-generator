@@ -255,8 +255,10 @@ async function submitImage() {
         <div class="mb-4 rounded-xl bg-paper-3/50 p-3">
           <label class="block text-sm text-muted mb-1.5">{{ t('vmModelSelect') }}</label>
           <select :value="appState.models.video" class="w-full glass-input rounded-lg px-3 py-2.5 text-sm text-ink" @change="onVideoModelChange">
-            <option v-for="m in appState.modelListCache.video" :key="m" :value="m">{{ m }}</option>
+            <option v-for="m in appState.modelListCache.video" :key="m" :value="m">{{ m }}{{ vmCaps.isAdapted(m) ? '' : ' ⚠' }}</option>
           </select>
+          <!-- v7.0 U8：当前版本未适配的模型显式提示（不再静默按 v2.0 协议提交） -->
+          <p v-if="!vmCaps.isAdapted(currentVideoModel)" class="text-xs text-amber-400 mt-1.5">{{ t('vmUnadaptedHint') }}</p>
           <!-- 当前模型能力说明 -->
           <div class="mt-2.5 space-y-1 text-xs">
             <p class="text-sm text-ink-2 font-medium">{{ vmCaps.capsOf(currentVideoModel).label || currentVideoModel }}</p>
@@ -318,6 +320,9 @@ async function submitImage() {
             </div>
           </template>
         </div>
+
+        <!-- v7.0 U3：2.5 系列竖屏（9:16）上游画面旋转缺陷提示（零风险：先提示不自动修） -->
+        <p v-if="isV25 && video.ratio === '9:16'" class="text-xs text-amber-400 mb-4">{{ t('vmPortraitRotateHint') }}</p>
 
         <!-- Reference Image -->
         <div v-if="needsRefImage" class="mb-4">

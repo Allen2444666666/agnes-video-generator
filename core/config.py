@@ -252,6 +252,13 @@ try:
         agnes_subtitle_ass: bool = True          # 2.1c 字幕 ASS 单链灰度开关
         agnes_video_poll_timeout: int = 1800     # 1.2 视频轮询总超时
         agnes_chat_timeout: int = 300            # stability_hardening P1：chat 单次读超时（默认与 chat_multimodal 对齐）
+        # v7.0 U1：队列类 503（video_queue_full）独立重试预算（秒）。
+        # 实测队列饱和可持续 12 分钟以上，普通 5xx 退避（~5.5 分钟）会在排进队
+        # 前放弃；此轨道不计入普通配额，默认 900s。
+        agnes_video_queue_retry_seconds: int = 900
+        # v7.0 U3：2.5 系列竖屏（9:16）上游躺倒缺陷的探测式校正开关。
+        # 默认关闭——待真实竖屏任务验证后再定默认值（计划 §三建议路径）。
+        agnes_fix_v25_portrait_rotation: bool = False
 
         # ── CORS（PR #33 吸收 Phase 2：可配置跨源白名单）──
         # 供独立本地伴侣工具（如 agnes-simple-ui）从浏览器跨源调用本服务 API。
@@ -294,6 +301,12 @@ except ImportError:  # pragma: no cover - pydantic-settings 为必备依赖，�
             )
             self.agnes_video_poll_timeout = int(os.environ.get("AGNES_VIDEO_POLL_TIMEOUT", "1800"))
             self.agnes_chat_timeout = int(os.environ.get("AGNES_CHAT_TIMEOUT", "300"))
+            self.agnes_video_queue_retry_seconds = int(
+                os.environ.get("AGNES_VIDEO_QUEUE_RETRY_SECONDS", "900")
+            )
+            self.agnes_fix_v25_portrait_rotation = os.environ.get(
+                "AGNES_FIX_V25_PORTRAIT_ROTATION", "0"
+            ).strip().lower() in ("1", "true", "on")
             self.agnes_cors_origins = os.environ.get("AGNES_CORS_ORIGINS", "")
             _cors_enabled = os.environ.get("AGNES_CORS_ENABLED", "").strip().lower()
             if _cors_enabled in ("0", "false", "off"):
@@ -1169,8 +1182,8 @@ VIDEO_MODEL_CAPABILITIES = {
         "max_ref_images": None,  # 不限
         "supports_ref_video": False,
         "desc": {
-            "zh": "免费旧版。支持任意像素分辨率、最长约 17 秒、多参考图关键帧；有负面提示词。",
-            "en": "Free legacy model. Arbitrary pixel resolution, up to ~17s, multi-image keyframes; supports negative prompt.",
+            "zh": "免费旧版。支持任意像素分辨率、最长约 17 秒、多参考图关键帧；有负面提示词。输出分辨率由上游按标准档归一（标准档保真，非标准档会被吸附）。",
+            "en": "Free legacy model. Arbitrary pixel resolution, up to ~17s, multi-image keyframes; supports negative prompt. Output resolution is normalized by upstream to standard tiers.",
         },
     },
     "agnes-video-2.5": {  # 付费模型
@@ -1218,8 +1231,8 @@ VIDEO_MODEL_CAPABILITIES = {
         "max_ref_images": 5,
         "supports_ref_video": False,
         "desc": {
-            "zh": "免费新版（限时免费）。固定 720P、4–12 秒、图片参考最多 5 张；不支持负面提示词与参考视频。",
-            "en": "Free new model (limited time). Fixed 720P, 4–12s, up to 5 ref images; no negative prompt or ref video.",
+            "zh": "免费新版（限时免费）。固定 720P、4–12 秒、图片参考最多 5 张；不支持负面提示词与参考视频。比例保真、绝对像素由上游按标准档归一（如 3:4 实际输出 834x1112）。",
+            "en": "Free new model (limited time). Fixed 720P, 4–12s, up to 5 ref images; no negative prompt or ref video. Aspect ratio preserved; absolute pixels normalized by upstream (e.g. 3:4 renders at 834x1112).",
         },
     },
 }
