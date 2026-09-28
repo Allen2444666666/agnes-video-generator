@@ -552,7 +552,7 @@ initCollapse()
             </div>
             <div v-if="keyCount > 0" class="mt-2 flex items-center gap-2 flex-wrap">
               <span class="text-xs px-2 py-0.5 rounded-full bg-green-900 text-green-300">{{ t('keyCountLabel') }}: {{ keyCount }} <span class="opacity-70">({{ keySource }})</span></span>
-              <span v-if="keyCount > 1" class="text-xs px-2 py-0.5 rounded-full bg-blue-900 text-blue-300">{{ t('multiKeyActive') }}</span>
+              <span v-if="keyCount > 1" class="text-xs px-2 py-0.5 rounded-full bg-blue-900 text-blue-300" :title="t('multiKeyHint')">{{ t('multiKeyActive') }}</span>
             </div>
             <!-- Key 列表 + per-key 域名映射 + 自动探测 -->
             <div v-if="keyList.length > 0" class="mt-3 space-y-1.5">
@@ -560,6 +560,7 @@ initCollapse()
                 <code class="flex-1 font-mono text-ink-2 truncate min-w-[8rem]">{{ item.mask }}</code>
                 <span class="px-1.5 py-0.5 rounded text-[10px] uppercase" :class="item.source === 'env' ? 'bg-amber-900/60 text-amber-300' : 'bg-paper-3 text-muted'">{{ item.source === 'env' ? t('keySrcEnv') : t('keySrcConfig') }}</span>
                 <span v-if="item.domain && keyDomainUrl(item.domain)" class="px-1.5 py-0.5 rounded text-[10px] font-mono" :class="item.domain === 'cn' ? 'bg-green-900/60 text-green-300' : 'bg-blue-900/60 text-blue-300'">{{ keyDomainUrl(item.domain) }}</span>
+                <span v-else-if="item.source === 'env'" class="px-1.5 py-0.5 rounded text-[10px] font-mono text-muted bg-paper-3" :title="t('keySrcEnvHint')">{{ t('keyDomainEnvFollow') }}（{{ displayDomain() }}）</span>
                 <span v-else class="px-1.5 py-0.5 rounded text-[10px] text-amber-300/80 bg-amber-900/30" :title="t('keyDomainNotSetHint')">{{ t('keyDomainNotSet') }}</span>
                 <label v-if="item.persistable" :for="'key-domain-select-' + item.id" class="sr-only">{{ t('keyDomainSelectTitle') }}</label>
                 <select :id="'key-domain-select-' + item.id" v-if="item.persistable" :value="item.domain || ''" class="glass-input rounded px-1.5 py-0.5 text-[10px] text-ink cursor-pointer" :title="t('keyDomainSelectTitle')" :aria-label="t('keyDomainSelectTitle')" @change="onKeyDomainChange(item, ($event.target as HTMLSelectElement).value)">

@@ -47,6 +47,17 @@ curl -X POST http://localhost:8765/api/config \
 >
 > **Using several API keys?** Name them `AGNES_API_KEY`, `AGNES_API_KEY_2`, `AGNES_API_KEY_3` … (numbering must be contiguous). Rate-limit quotas scale with the number of keys, and a `429` automatically rotates to the next key.
 
+> **⚠️ Match the key to the right site (avoid `401` / "invalid token").** Agnes has separate endpoints per site, and a `401` almost always means the key is being sent to the wrong one:
+> - `apihub.agnes-ai.com` (Global) — keys from the global site.
+> - `api.agnes-ai.cn` (China) — **China-domestic-only** keys.
+> - `apihub.agnes-ai.cn` (fallback) — accepts both China and global keys.
+>
+> The domain is chosen in the **Web config page**, not via `.env`. Keys supplied through `.env` / environment variables are *env* keys: they **cannot be bound to a per-key domain and are skipped by "Auto-detect domains"** — they all use the single **global default domain** you set on the Web page. So:
+> - **Single-site key:** just set the global default domain to match that key's site, and you're done.
+> - **Keys from different sites mixed together:** add them on the Web config page instead (these are *config* keys). Each gets its own domain dropdown, or click **Auto-detect domains** to fill them in; they persist across restarts.
+>
+> With multiple keys rotating, a single mismatched or expired key makes tasks intermittently fail with `401` when that key is picked — fix or remove it.
+
 **Step 3 — Create Your First Video**
 
 Open `http://localhost:8765`, choose a video mode (Simple / Creative / Manuscript / Anchor), enter your idea, and click "Start Generating".

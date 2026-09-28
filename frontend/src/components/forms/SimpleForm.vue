@@ -3,7 +3,7 @@ import { ref, reactive, computed, watch } from 'vue'
 import { t } from '@/i18n'
 import { appState } from '@/store'
 import { useGa } from '@/composables/useGa'
-import { useVideoModelCaps, MODE_V25_TO_API } from '@/composables/useVideoModelCaps'
+import { useVideoModelCaps, MODE_V25_TO_API, normalizeResolution } from '@/composables/useVideoModelCaps'
 import { useConfig } from '@/composables/useConfig'
 import { useTaskSubmit } from '@/composables/useTaskSubmit'
 import { useDraft } from '@/composables/useDraft'
@@ -64,7 +64,7 @@ const advancedCollapsed = reactive({ video: true, image: true })
     if (typeof vd.prompt === 'string') video.prompt = vd.prompt
     if (typeof vd.mode === 'string') video.mode = vd.mode
     if (typeof vd.duration === 'string') video.duration = vd.duration
-    if (typeof vd.resolution === 'string') video.resolution = vd.resolution
+    if (typeof vd.resolution === 'string') video.resolution = normalizeResolution(vd.resolution)
     if (typeof vd.ratio === 'string') video.ratio = vd.ratio
     if (typeof vd.size === 'string') video.size = vd.size
     if (typeof vd.seed === 'string') video.seed = vd.seed
@@ -399,7 +399,7 @@ async function submitImage() {
           <select v-model="image.size" class="w-full glass-input rounded-lg px-3 py-2.5 text-sm text-ink">
             <option value="1024x1024">{{ t('resSquare') }} (1024x1024)</option>
             <option value="768x1152">{{ t('resPortrait') }} (768x1152)</option>
-            <option value="1152x768">{{ t('resLandscape') }} (1152x768)</option>
+            <option value="1280x720">{{ t('resLandscape') }} (1280x720)</option>
             <option value="768x1344">{{ t('resPortraitHD') }} (HD)</option>
             <option value="1344x768">{{ t('resLandscapeHD') }} (HD)</option>
             <option value="1024x1792">{{ t('resPortraitTall') }}</option>

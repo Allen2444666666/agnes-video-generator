@@ -14,6 +14,16 @@ const RATIO_TO_WH: Record<string, [number, number]> = {
   '9:16': [720, 1280],
 }
 
+// 历史像素档归一化：旧「横屏」1152x768 是 3:2，会被 2.5 系列映射成 4:3 画幅，
+// 已在 v7.x 统一为真正的 16:9（1280x720）。此处兼容本地草稿里的旧值。
+const LEGACY_RESOLUTION_MAP: Record<string, string> = {
+  '1152x768': '1280x720',
+}
+
+export function normalizeResolution(value: string): string {
+  return LEGACY_RESOLUTION_MAP[value] || value
+}
+
 // 2.5 系列模式 → 后端 simple 任务模式（提交映射）
 export const MODE_V25_TO_API: Record<string, string> = {
   text: 't2v',
@@ -105,7 +115,7 @@ export function useVideoModelCaps() {
     }
     return [
       { value: '768x1152', label: L({ zh: '竖屏 768x1152', en: 'Portrait 768x1152' }) },
-      { value: '1152x768', label: L({ zh: '横屏 1152x768', en: 'Landscape 1152x768' }) },
+      { value: '1280x720', label: L({ zh: '横屏 1280x720', en: 'Landscape 1280x720' }) },
       { value: '1024x1024', label: L({ zh: '方形 1024x1024', en: 'Square 1024x1024' }) },
     ]
   }

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
-import { t, LANGS, useI18n } from '@/i18n'
+import { t } from '@/i18n'
 import { useTheme } from '@/composables/useTheme'
 import { useToast } from '@/composables/useToast'
 import { useConfig } from '@/composables/useConfig'
@@ -19,8 +19,8 @@ import ProgressPage from '@/components/ProgressPage.vue'
 import VoicePickerModal from '@/components/VoicePickerModal.vue'
 import Toast from '@/components/Toast.vue'
 import ConfirmModal from '@/components/ConfirmModal.vue'
+import LangSwitcher from '@/components/shared/LangSwitcher.vue'
 
-const { switchLang } = useI18n()
 const { themeIcon, themeLabel, cycleTheme } = useTheme()
 const { visible: toastVisible, message: toastMessage, type: toastType } = useToast()
 const { loadModels, renderWorkspaces } = useConfig()
@@ -140,9 +140,9 @@ async function autoReconnectRunningTask() {
     <div class="max-w-4xl flex-1 min-w-0 py-8">
       <!-- Header -->
       <div class="text-center mb-10">
-        <div class="flex items-center justify-end gap-2 mb-5">
+        <div class="flex items-center justify-end gap-1 mb-5">
           <button
-            class="glass-input rounded-lg px-3 py-1.5 text-sm cursor-pointer text-ink flex items-center gap-1.5 hover:border-accent/40 transition"
+            class="flex items-center gap-1.5 px-2.5 py-2 text-sm text-ink-2 hover:text-ink hover:bg-paper-2 rounded-lg transition-colors"
             :title="themeLabel"
             :aria-label="themeLabel"
             @click="cycleTheme"
@@ -152,12 +152,7 @@ async function autoReconnectRunningTask() {
             </svg>
             <span class="text-xs whitespace-nowrap">{{ themeLabel }}</span>
           </button>
-          <select
-            class="glass-input rounded-lg px-3 py-1.5 text-sm cursor-pointer text-ink"
-            @change="switchLang(($event.target as HTMLSelectElement).value)"
-          >
-            <option v-for="l in LANGS" :key="l.code" :value="l.code">{{ l.label }}</option>
-          </select>
+          <LangSwitcher />
         </div>
         <h1 class="text-2xl sm:text-4xl font-bold text-ink px-2" style="position: relative; z-index: 0">Agnes Video Generator</h1>
         <p class="text-muted mt-2 text-sm tracking-wide px-2">{{ t('subtitle') }}</p>

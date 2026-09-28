@@ -4,15 +4,15 @@ import { ref, reactive, computed } from 'vue'
 import zh from './langs/zh.json'
 import en from './langs/en.json'
 
-// 支持的语言列表（与 lang-selector 选项一致）
+// 支持的语言列表（label 与官网 nav 语言菜单一致：旗帜 + 语言简称，便于多栏面板排版）
 export const LANGS: { code: string; label: string }[] = [
   { code: 'zh', label: '🇨🇳 中文' },
   { code: 'en', label: '🇺🇸 English' },
   { code: 'ru', label: '🇷🇺 Русский' },
   { code: 'ja', label: '🇯🇵 日本語' },
   { code: 'ko', label: '🇰🇷 한국어' },
-  { code: 'ms', label: '🇲🇾 Bahasa Melayu' },
-  { code: 'id', label: '🇮🇩 Bahasa Indonesia' },
+  { code: 'ms', label: '🇲🇾 Melayu' },
+  { code: 'id', label: '🇮🇩 Indonesia' },
   { code: 'de', label: '🇩🇪 Deutsch' },
   { code: 'fr', label: '🇫🇷 Français' },
   { code: 'nl', label: '🇳🇱 Nederlands' },
@@ -24,7 +24,7 @@ export const LANGS: { code: string; label: string }[] = [
   { code: 'th', label: '🇹🇭 ไทย' },
   { code: 'hi', label: '🇮🇳 हिन्दी' },
   { code: 'bn', label: '🇧🇩 বাংলা' },
-  { code: 'tl', label: '🇵🇭 Tagalog' },
+  { code: 'tl', label: '🇵🇭 Filipino' },
   { code: 'ar', label: '🇸🇦 العربية' },
   { code: 'fa', label: '🇮🇷 فارسی' },
   { code: 'ur', label: '🇵🇰 اردو' },

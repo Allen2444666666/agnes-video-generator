@@ -57,6 +57,8 @@ A `401 Unauthorized` or "无效的令牌 / invalid token" response usually means
 
 As of **v6.4.2**, each key can be bound to its own access domain, and a one-click **Auto-detect domains** button probes each key across `com` / `cn` / `cn_bak` and fills in the matching domain. In the API Key panel, pick the domain that matches your key, or just run auto-detect. Keys issued on the global site should use `apihub.agnes-ai.com`, or the `cn_bak` fallback (`apihub.agnes-ai.cn`), which accepts both domestic and global keys.
 
+> **Note — env keys vs. Web-page keys.** Per-key domain binding and Auto-detect only apply to keys added in the **Web config page**. Keys supplied via `.env` / environment variables are *env* keys: they can't be bound individually and are skipped by auto-detect — they all use the single **global default domain** you pick on the Web page. So with a `.env` key, the fix for `401` is to set the global default domain to match that key's site (or move the key to the Web config page). Also, when rotating multiple keys, one mismatched/expired key causes intermittent `401` whenever it is the one picked.
+
 ### Can I get a video by posting my prompt in a GitHub Issue?
 
 No. This project is a **self-hosted application**, not a hosted generation service — maintainers don't run jobs for you, so a prompt pasted into an Issue (or a comment) produces nothing and gets closed as invalid. Use one of the two real entry points instead:

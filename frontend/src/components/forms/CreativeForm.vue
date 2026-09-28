@@ -5,6 +5,7 @@ import { appState } from '@/store'
 import { useVoice } from '@/composables/useVoice'
 import { useTaskSubmit, collectAudioSubtitleFields } from '@/composables/useTaskSubmit'
 import { useDraft } from '@/composables/useDraft'
+import { normalizeResolution } from '@/composables/useVideoModelCaps'
 import WatermarkToggle from '@/components/shared/WatermarkToggle.vue'
 import SubtitleConfig from '@/components/shared/SubtitleConfig.vue'
 import PresetPicker from '@/components/presets/PresetPicker.vue'
@@ -53,7 +54,7 @@ const draft = useDraft('creative')
   if (Array.isArray(d.independentDurations)) form.independentDurations = d.independentDurations
   if (typeof d.style === 'string') form.style = d.style
   if (typeof d.chaining === 'string') form.chaining = d.chaining
-  if (typeof d.resolution === 'string') form.resolution = d.resolution
+  if (typeof d.resolution === 'string') form.resolution = normalizeResolution(d.resolution)
 })()
 draft.autoSave(form, (v) => ({
   name: v.name, idea: v.idea, durationSource: v.durationSource, sceneCount: v.sceneCount,
@@ -261,7 +262,7 @@ async function submitCreative() {
           <label class="block text-sm text-muted mb-1.5">{{ t('resolution') }}</label>
           <select v-model="form.resolution" class="w-full glass-input rounded-lg px-3 py-2.5 text-sm text-ink">
             <option value="768x1152">{{ t('resPortrait') }}</option>
-            <option value="1152x768">{{ t('resLandscape') }}</option>
+            <option value="1280x720">{{ t('resLandscape') }}</option>
             <option value="1024x1024">{{ t('resSquare') }}</option>
           </select>
         </div>

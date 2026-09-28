@@ -18,7 +18,7 @@ CONFIG_FILE = os.path.join(CONFIG_DIR, "config.json")
 # ═══════════════════════════════════════════════════
 # 应用版本号（v6.1 新增：发版时同步更新，见 docs/dev/release_process.md）
 # ═══════════════════════════════════════════════════
-APP_VERSION = "7.0.1"
+APP_VERSION = "7.0.2"
 
 # 未配置 API Key 时的统一报错文案（含免费获取与在线体验兜底，全站路由共用）
 #
@@ -903,7 +903,7 @@ def set_watermark_config(enabled: bool = None, language: str = None):
 
 VIDEO_RESOLUTION_PRESETS = {
     "portrait": {"width": 768, "height": 1152, "label": "竖屏 9:16"},
-    "landscape": {"width": 1152, "height": 768, "label": "横屏 16:9"},
+    "landscape": {"width": 1280, "height": 720, "label": "横屏 16:9"},
     "square": {"width": 1024, "height": 1024, "label": "方形 1:1"},
 }
 
@@ -1085,6 +1085,63 @@ def is_v25_video_model(model: str) -> bool:
 # 支持的画幅比例（2.5 系列 aspect_ratio 枚举）
 VIDEO_ASPECT_RATIOS = ["21:9", "16:9", "4:3", "1:1", "3:4", "9:16"]
 
+# ── 项目标准像素档 → aspect_ratio 显式映射（语义优先于数值最近邻）──
+# 背景：2.5 系列只接受上面 6 档比例枚举，而非标准比例走「数值最近邻」会归错档：
+#   · 1152x768（3:2, 1.500）距 4:3(1.333) 0.167 < 距 16:9(1.778) 0.278 → 误判 4:3
+#   · 768x1152（2:3, 0.667）距 3:4(0.750) 0.083 < 距 9:16(0.563) 0.104 → 误判 3:4
+# 改度量方式（比值 / 对数距离）救不了这两个值——2:3 在几何上确实更贴近 3:4。
+# 但它们在前端就是「竖屏 9:16」「横屏 16:9」两个语义明确的惯例像素档，故显式查表，
+# 不让数值距离决定。表内其余档位与最近邻结果一致，仅作显式化，不改变既有行为。
+STANDARD_PIXEL_TO_RATIO = {
+    # 竖屏
+    (768, 1152): "9:16",
+    (720, 1280): "9:16",
+    (768, 1344): "9:16",
+    (1024, 1792): "9:16",
+    # 横屏
+    (1152, 768): "16:9",
+    (1280, 720): "16:9",
+    (1344, 768): "16:9",
+    (1792, 1024): "16:9",
+    # 方形与超宽
+    (1024, 1024): "1:1",
+    (960, 720): "4:3",
+    (720, 960): "3:4",
+    (1680, 720): "21:9",
+}
+
+
+def width_height_to_aspect_ratio(width: int, height: int) -> str:
+    """将像素宽高映射到 2.5 系列 aspect_ratio 枚举。
+
+    映射顺序：
+
+    1. 项目标准像素档显式查表（``STANDARD_PIXEL_TO_RATIO``）——语义优先，避免
+       ``768x1152``（竖屏 9:16）/ ``1152x768``（横屏 16:9）这类项目惯例档被
+       数值最近邻误判成 ``3:4`` / ``4:3``；
+    2. 未命中时取误差最小的档位（默认 ``16:9``）。
+
+    供 API 客户端（提交时推导 aspect_ratio）与回归校验脚本（校验时推导期望
+    比例）共用，保证「提交」与「校验」使用同一套映射规则。
+    """
+    if not width or not height:
+        return "16:9"
+    exact = STANDARD_PIXEL_TO_RATIO.get((width, height))
+    if exact:
+        return exact
+    ratio = width / height
+    best = "16:9"
+    best_dist = float("inf")
+    for ar in VIDEO_ASPECT_RATIOS:
+        w, h = ar.split(":")
+        target = int(w) / int(h)
+        dist = abs(ratio - target)
+        if dist < best_dist:
+            best_dist = dist
+            best = ar
+    return best
+
+
 # 2.5 系列时长档位（seconds 字符串 "4"–"12"）
 VIDEO_25_DURATIONS = [4, 5, 6, 8, 10, 12]
 
@@ -1104,7 +1161,7 @@ VIDEO_MODEL_CAPABILITIES = {
             "type": "pixels",
             "options": [
                 {"value": "768x1152", "label": {"zh": "竖屏 768x1152", "en": "Portrait 768x1152"}},
-                {"value": "1152x768", "label": {"zh": "横屏 1152x768", "en": "Landscape 1152x768"}},
+                {"value": "1280x720", "label": {"zh": "横屏 1280x720", "en": "Landscape 1280x720"}},
                 {"value": "1024x1024", "label": {"zh": "方形 1024x1024", "en": "Square 1024x1024"}},
             ],
         },
