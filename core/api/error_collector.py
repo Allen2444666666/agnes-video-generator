@@ -33,6 +33,63 @@ _WORKSPACE_ROOT: Optional[Path] = None
 # 用 contextvar 而非逐层传参，将改动面收敛到 API 模块内部（PRD FR9）。
 _TASK_ID_CTX: ContextVar[str] = ContextVar("error_collector_task_id", default="")
 
+# ── GA 埋点：上游接口报错聚合（内存态，按 task_id 分组）──
+# 结构：{task_id: {"{status_code}|{model_type}|{api_method}": {
+#     "status_code": int, "model_type": str, "api_method": str,
+#     "count": int, "first_ts": iso, "last_ts": iso}}}
+#
+# 设计说明：故意**不写入 task_state.json**——流水线持有自己的 TaskManager
+# 缓存实例，每次 update_state 都会拿缓存快照整份覆盖落盘，error_collector
+# 若单独写盘会被下一次流水线落盘冲掉。改为内存聚合 +
+# GET /api/tasks/{id}（web/routes/task_routes.py）读取时合并下发，
+# 前端轮询到新增量即上报 GA `api_error` 事件（503 趋势分析用）。
+# 进程重启后内存聚合清零属预期：前端埋点本身只覆盖"页面开着"的窗口，
+# 完整离线趋势仍以 error_logs/ 落盘文件为准。
+_TASK_ERROR_AGG: dict = {}
+_MAX_AGG_ENTRIES_PER_TASK = 32  # 按维度聚合后条目数上限，防异常状态码刷爆
+
+
+def _bump_upstream_error(task_id: str, status_code: int, model_type: str, api_method: str) -> None:
+    """累加一次带 HTTP 状态码的上游报错（内存聚合，失败静默不影响主流程）。"""
+    try:
+        now = datetime.now().isoformat(timespec="seconds")
+        per_task = _TASK_ERROR_AGG.setdefault(task_id, {})
+        key = f"{status_code}|{model_type}|{api_method}"
+        entry = per_task.get(key)
+        if entry is None:
+            if len(per_task) >= _MAX_AGG_ENTRIES_PER_TASK:
+                logger.warning(
+                    f"[ErrorCollector] Upstream error agg cap "
+                    f"({_MAX_AGG_ENTRIES_PER_TASK}) reached for task {task_id}, dropping"
+                )
+                return
+            per_task[key] = {
+                "status_code": status_code,
+                "model_type": model_type,
+                "api_method": api_method,
+                "count": 1,
+                "first_ts": now,
+                "last_ts": now,
+            }
+        else:
+            entry["count"] += 1
+            entry["last_ts"] = now
+    except Exception as e:
+        logger.debug(f"[ErrorCollector] Failed to bump upstream error agg: {e}")
+
+
+def get_task_upstream_errors(task_id: str) -> list:
+    """返回某任务聚合后的上游报错列表（按首次发生时间排序，供任务详情端点合并下发）。"""
+    per_task = _TASK_ERROR_AGG.get(task_id or "")
+    if not per_task:
+        return []
+    return sorted(per_task.values(), key=lambda e: e.get("first_ts", ""))
+
+
+def clear_task_upstream_errors(task_id: str) -> None:
+    """任务删除时清理对应聚合（防内存缓慢增长）。"""
+    _TASK_ERROR_AGG.pop(task_id or "", None)
+
 
 def set_workspace_root(path: str) -> None:
     """设置错误日志存储的根目录（通常为激活的工作空间路径）。
@@ -197,6 +254,12 @@ def collect_error(
 
         with open(filepath, "w", encoding="utf-8") as f:
             json.dump(error_data, f, ensure_ascii=False, indent=2)
+
+        # GA 埋点：带 HTTP 状态码的报错同步累加进任务级内存聚合
+        if status_code and error_data["task_id"]:
+            _bump_upstream_error(
+                error_data["task_id"], status_code, model_type, api_method
+            )
 
         # 优化路线图 1.5b：按数量轮转，防止 error_logs 无限膨胀
         _rotate_error_logs(log_dir)

@@ -74,8 +74,12 @@ export function useTaskSubmit() {
       opts.onSuccess?.(d)
       return d
     } catch (e: any) {
+      // 提交接口的失败消息通常含 "HTTP 503"（detail 透传后端 HTTPException），提取后按
+      // status_code 维度入 GA 趋势统计；提取不到则不带该参数
+      const scMatch = (e.message || '').match(/HTTP (\d{3})/)
       trackEvent('create_task_failed', {
         task_type: opts.eventTaskType || opts.taskType,
+        ...(scMatch ? { status_code: scMatch[1] } : {}),
         error: (e.message || '').slice(0, 120),
       })
       showToast(t('failCreate') + ': ' + e.message, 4500)

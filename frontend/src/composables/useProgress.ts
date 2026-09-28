@@ -11,7 +11,7 @@ import type { TaskState, StepDef } from '@/types'
 
 const POLL_INTERVAL = 30000
 
-const { trackTaskResultOnce } = useGa()
+const { trackTaskResultOnce, trackEvent } = useGa()
 const { showToast } = useToast()
 
 // 产物刷新（模块级单例，进度页共享状态）
@@ -45,6 +45,41 @@ let pollInFlight = false
 let consecutivePollFailures = 0
 const connectionLost = ref(false)
 const MAX_CONSECUTIVE_POLL_FAILURES = 3
+
+// ── GA api_error 增量上报（后端 error_collector 内存聚合的 upstream_errors）──
+// 语义：进度页首次观察到某任务的聚合时**静默建基线**（避免每次打开页面把
+// 历史错误重复上报一遍）；此后每次轮询，仅对计数增长的签名上报一次
+// api_error 事件（count=增量），GA 侧按 status_code 维度做趋势统计。
+// 签名 = status_code|model_type|api_method。
+let apiErrBaselineTaskId = ''
+const apiErrReported: Record<string, number> = {}
+
+function reportUpstreamErrors(state: TaskState) {
+  const errs = Array.isArray(state.upstream_errors) ? state.upstream_errors : []
+  if (state.task_id && apiErrBaselineTaskId !== state.task_id) {
+    apiErrBaselineTaskId = state.task_id
+    Object.keys(apiErrReported).forEach((k) => delete apiErrReported[k])
+    for (const e of errs) {
+      apiErrReported[`${e.status_code}|${e.model_type}|${e.api_method}`] = e.count || 0
+    }
+    return
+  }
+  for (const e of errs) {
+    const key = `${e.status_code}|${e.model_type}|${e.api_method}`
+    const seen = apiErrReported[key] || 0
+    const total = e.count || 0
+    if (total > seen) {
+      apiErrReported[key] = total
+      trackEvent('api_error', {
+        task_type: state.task_type || appState.currentTaskType,
+        status_code: String(e.status_code || 0),
+        model_type: e.model_type || '',
+        api_method: e.api_method || '',
+        count: total - seen,
+      })
+    }
+  }
+}
 
 function resetSteps(taskType: string) {
   steps.value = getStepsForType(taskType)
@@ -236,6 +271,7 @@ async function pollTaskProgress(taskId: string) {
     const state = await api.getTask(taskId)
     consecutivePollFailures = 0
     connectionLost.value = false
+    reportUpstreamErrors(state)
 
     progressPct.value = Math.round((state.current_progress || 0) * 100)
     if (state.current_message) {
@@ -275,9 +311,13 @@ async function pollTaskProgress(taskId: string) {
     }
 
     if (state.status === 'failed' || (step === 'error' && status === 'failed')) {
+      // 从失败消息中提取 HTTP 状态码（后端失败消息通常含 "HTTP 503"），便于 GA 按
+      // status_code 维度统计失败原因趋势；提取不到则不带该参数
+      const scMatch = (state.current_message || '').match(/HTTP (\d{3})/)
       trackTaskResultOnce('task_failed', taskId, {
         task_type: state.task_type || appState.currentTaskType,
         ...(state.mode ? { mode: state.mode } : {}),
+        ...(scMatch ? { status_code: scMatch[1] } : {}),
         error: (state.current_message || '').slice(0, 120),
       })
       clearRunning()

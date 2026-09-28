@@ -49,6 +49,10 @@ CUSTOM_DIMENSIONS = [
     ("error", "错误信息"),
     ("description", "异常描述"),
     ("fatal", "是否致命"),
+    # 接口报错趋势（api_error / task_failed / create_task_failed 事件）
+    ("status_code", "HTTP 状态码"),
+    ("model_type", "模型类型"),
+    ("api_method", "API 方法"),
 ]
 
 # 需要标记为关键事件（转化）的自定义事件

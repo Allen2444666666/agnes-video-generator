@@ -306,6 +306,13 @@ async def delete_task(task_id: str):
     app_state.active_pipelines.pop(task_id, None)
     app_state._queued_tasks.pop(task_id, None)
     app_state.release_pipeline_lock(task_id)
+    # GA 埋点：同步清理上游报错内存聚合（防缓慢增长）
+    try:
+        from core.api.error_collector import clear_task_upstream_errors
+
+        clear_task_upstream_errors(task_id)
+    except Exception:
+        pass
 
     if not removed_dir and not _task_exists(task_id):
         # 任务目录不存在且任务已不在列表中：视为不存在

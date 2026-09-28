@@ -263,6 +263,7 @@ agnes-video-generator/
 | 视频提交 | 重试 5 次，间隔 30s 递增；5xx、429、超时均重试（走视频提交独立桶） |
 | 视频轮询 | 间隔 60s，每 10 次输出日志；连续 10 次失败放弃；整体超时 1800s |
 | 报错收集 | `error_collector.py` 记录失败调用的 prompt/错误类型/详情至工作目录 `error_logs/` |
+| GA 埋点（接口报错趋势） | `error_collector.py` 将带 `status_code` 的报错按 task_id **内存聚合**（`get_task_upstream_errors`，故意不写 task_state.json——流水线 TaskManager 缓存快照会整份覆盖落盘）；`GET /api/tasks/{id}` 合并下发 `upstream_errors`，前端 `useProgress.ts` 轮询增量上报 GA `api_error` 事件（按 status_code/model_type/api_method 做趋势）；`task_failed` / `create_task_failed` 附带从消息提取的 `status_code`；新维度经 `scripts/setup_ga4.py` 注册。注意：内存聚合重启清零，完整离线趋势以 `error_logs/` 为准 |
 | PipelineShutdown | 所有流水线统一处理，落盘当前状态 |
 | TTS 失败 | 降级为静音 + 字幕 |
 
