@@ -102,11 +102,12 @@ async function onKeyDomainChange(item: any, domain: string) {
   await saveKeyDomain(item.id, domain)
 }
 
-// 折叠状态（4 个配置面板）
+// 折叠状态（4 个配置面板）：默认全部折叠——供应商管理 / 模型选择 / 工作目录 /
+// 隐私设置首屏均只显示标题行，用户手动展开后由 *_manual 偏好记忆（见 initCollapse）
 const collapsed = reactive<Record<string, boolean>>({
-  apikey: false,
-  model: false,
-  workspace: false,
+  apikey: true,
+  model: true,
+  workspace: true,
   privacy: true,
 })
 
@@ -226,6 +227,9 @@ const textProviderComposite = computed<string>({
     appState.textProviderSelected = val
     const models = textModelsForProvider(val)
     if (models.length > 0) appState.models.text = models[0]
+    // 注意：此处只改内存状态，**落盘需点「保存」**（与其它模型配置一致）。
+    // 切回 agnes 时 text_provider 置空串，保存时由 api.saveModels 转成显式的
+    // 'agnes' 发送（空串在表单层会丢失，见 frontend/src/api/index.ts）。
   },
 })
 // 某供应商的模型列表（agnes → 内置列表；自定义 → providerModelCache）
@@ -725,8 +729,10 @@ initCollapse()
         <div>
           <label class="block text-xs text-muted mb-1">{{ t('modelVideoLabel') }} (v6.2)</label>
           <select v-model="appState.models.video" class="flex-1 glass-input rounded-lg px-3 py-2.5 text-sm text-ink">
-            <option v-for="m in appState.modelListCache.video" :key="m" :value="m">{{ modelDisplayLabel(m) }}</option>
+            <option v-for="m in appState.modelListCache.video" :key="m" :value="m">{{ modelDisplayLabel(m) }}{{ vmCaps.isAdapted(m) ? '' : ' ⚠' }}</option>
           </select>
+          <!-- v7.0 U8：上游有、本地能力表无的模型显式提示（避免「模型可见档位不能用」） -->
+          <p v-if="appState.models.video && !vmCaps.isAdapted(appState.models.video)" class="text-xs text-amber-400 mt-1.5">{{ t('vmUnadaptedHint') }}</p>
           <p v-if="vmCaps.isPaidTag(appState.models.video)" class="text-xs text-amber-400 mt-1.5">{{ t('modelPaidHint') }}</p>
           <p v-else-if="vmCaps.priceText(appState.models.video)" class="text-xs text-green-400 mt-1.5">{{ vmCaps.priceText(appState.models.video) }}</p>
 

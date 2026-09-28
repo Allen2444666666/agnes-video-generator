@@ -23,7 +23,11 @@ async def root():
     index_path = os.path.join(os.path.dirname(__file__), "..", "..", "static", "index.html")
     index_path = os.path.abspath(index_path)
     if os.path.exists(index_path):
-        return FileResponse(index_path)
+        # 入口页必须禁缓存：index.html 引用带内容 hash 的 /static/assets/*，
+        # 重新构建后旧 hash 文件即被删除——浏览器若缓存旧入口页，会去加载
+        # 已不存在的 JS，导致整个前端（含任务列表）静默失效。
+        # no-cache = 每次向服务器校验（配合 ETag/Last-Modified 仍可 304），assets 本身不受影响。
+        return FileResponse(index_path, headers={"Cache-Control": "no-cache"})
     return {"message": "Agnes Video Generator API"}
 
 

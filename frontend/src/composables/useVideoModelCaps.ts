@@ -60,6 +60,11 @@ export function useVideoModelCaps() {
   // 是否 2.5 系列
   const isV25Model = (model: string) => isV25(model)
 
+  // v7.0 U8：该模型是否有本地能力元数据（无 = 当前版本未适配）。
+  // 能力表随发版硬编码，旧版本会「模型可见但档位不能用」，必须显式提示而非
+  // 静默按 v2.0 像素协议提交（详见 plans/v7.0/upstream_error_handling_plan.md §4）。
+  const isAdapted = (model: string): boolean => !!capsOf(model).label
+
   // 价格标签（付费/免费/限时免费）
   function priceText(model: string): string {
     const c = capsOf(model)
@@ -169,6 +174,7 @@ export function useVideoModelCaps() {
     currentModel,
     capsOf,
     isV25Model,
+    isAdapted,
     priceText,
     isPaidTag,
     modeOptions,

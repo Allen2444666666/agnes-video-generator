@@ -217,6 +217,8 @@ class BasePipeline(ABC):
         data: dict = None,
         *,
         preserve_step: bool = False,
+        message_key: str = None,
+        message_params: dict = None,
     ):
         """更新进度并持久化到 state（轮询模式）。
 
@@ -226,13 +228,18 @@ class BasePipeline(ABC):
         Args:
             step: 步骤 key，写入 ``current_step`` 供前端与诊断报告定位环节。
             status: 步骤状态（running / completed / failed / awaiting_user）。
-            message: 面向用户的进度文案。
+            message: 面向用户的进度文案（后端按 ui_language 译好的兜底句）。
             progress: 进度比例 0.0 ~ 1.0。
             data: 附带数据（仅回调透传，不落盘）。
             preserve_step: True 时**不覆盖** ``current_step``，用于 ``error``
                 这类终态事件——它们表达的是「出了问题」而不是「在哪个环节」，
                 覆盖会把真实失败环节冲掉，使诊断报告归因失真（issue #56/#57
                 真实失败在视频下载，报告却显示 scene_config）。
+            message_key: 可选。结构化消息的 i18n key（如
+                ``"progress.video.queue_full"``），与 ``message_params`` 一并
+                落盘，供前端用其 22 语言文案渲染；省略时清空这两个字段，
+                避免上一次的结构化消息残留（旧前端仍读 ``current_message``）。
+            message_params: ``message_key`` 的插值参数（如 ``{"n": 3}``）。
 
         落盘策略（2.4 节流 + v6.4.8 终态强制）：
         - ``status == "running"`` 的高频进度更新按 0.5s 阈值合并落盘；
@@ -246,6 +253,8 @@ class BasePipeline(ABC):
             self._state.current_status = status
             self._state.current_progress = progress
             self._state.current_message = message
+            self._state.current_message_key = message_key or ""
+            self._state.current_message_params = dict(message_params or {})
             # 2.4：进度写盘节流——进度类字段高频更新时合并落盘（0.5s 阈值）。
             # 关键状态（video_id / scenes / paragraphs 等）不经本路径，不受影响。
             force_save = status != "running"
@@ -258,6 +267,8 @@ class BasePipeline(ABC):
                         "current_status": status,
                         "current_progress": progress,
                         "current_message": message,
+                        "current_message_key": message_key or "",
+                        "current_message_params": dict(message_params or {}),
                     }
                     if not preserve_step:
                         fields["current_step"] = step
@@ -376,6 +387,46 @@ class BasePipeline(ABC):
     def _t(self, key: str, **params) -> str:
         """``translate(key, self._ui_lang(), **params)`` 的快捷方式。"""
         return translate(key, self._ui_lang(), **params)
+
+    def _submit_progress_callback(self, step: str, progress: float):
+        """U1（v7.0）：提交侧进度回调，供 ``AgnesVideoAPI.submit_video`` 使用。
+
+        队列类 503（``video_queue_full``）命中独立重试轨道时，经此回调把
+        「Agnes 视频队列已满 + 原样报错 + 错峰建议」实时推给前端（任务状态轮询读取）。
+        回调为同步函数（API 层在重试循环内直接调用），内部调度异步 ``_emit``。
+
+        Args（回调载荷 dict）：``attempt`` 重试次序、``waited_s`` 已等秒数、
+        ``status`` HTTP 状态码、``code`` 上游 body code、``message`` 上游原始文案。
+        """
+        def _cb(stage: str, data: dict) -> None:
+            if stage != "queue_full":
+                return
+            info = data or {}
+            waited = float(info.get("waited_s") or 0)
+            params = {
+                "n": int(info.get("attempt") or 1),
+                "waited": max(1, round(waited / 60)),
+                "status": info.get("status") or "",
+                "code": info.get("code") or "",
+            }
+            try:
+                asyncio.get_running_loop().create_task(self._emit(
+                    step, "running",
+                    # 兜底句仍按任务语言渲染（旧前端 / 前端未覆盖该 key 时使用）
+                    self._t("progress.video.queue_full", **params),
+                    progress,
+                    # 结构化 key + 参数：前端命中后用自己的 22 语言文案渲染
+                    message_key="progress.video.queue_full",
+                    message_params=params,
+                ))
+            except RuntimeError:
+                # 无运行中事件循环（理论不可达）：降级日志
+                logger.warning(
+                    f"[Pipeline] Agnes video queue full (HTTP {info.get('status')} · "
+                    f"{info.get('code')}), queue retry #{info.get('attempt')} "
+                    f"(waited {waited:.0f}s)"
+                )
+        return _cb
 
     @abstractmethod
     async def run(self, state: BaseTaskState) -> str:

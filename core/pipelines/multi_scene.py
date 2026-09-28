@@ -23,7 +23,11 @@ from typing import Callable, List, Optional
 from core.api.agnes_video import VideoTaskCancelled, is_remote_video_failure
 from core.pipelines import BasePipeline, CheckpointPause, PipelineShutdown
 from models.task import SceneTask, StepStatus
-from utils.network import describe_network_error
+from utils.network import (
+    describe_network_error,
+    describe_queue_full_error,
+    queue_full_message_params,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -169,7 +173,14 @@ class MultiScenePipeline(BasePipeline):
             # 网络 / 域名解析类故障翻译成可自助排查的提示（issue #56/#57：此前只抛
             # RetryError[...]，用户看不出是本机 DNS 问题，反复点「重试任务」无效）
             # v7.0（issue #64）：按 state.ui_language 输出中/英文，避免英文界面看到中文诊断
-            message = describe_network_error(e, lang=self._ui_lang()) or str(e)
+            # v7.0 U1：队列满优先走结构化提示（前端按 22 语言渲染，后端给 zh/en 兜底）
+            message = (
+                describe_queue_full_error(e, lang=self._ui_lang())
+                or describe_network_error(e, lang=self._ui_lang())
+                or str(e)
+            )
+            message_key = "error.video.queue_full" if queue_full_message_params(e) else None
+            message_params = queue_full_message_params(e) or None
             failed_step = self._state.current_step if self._state else ""
             # 持久化完整 traceback，供诊断端点/前端反馈报告暴露（定位环境级异常如 [WinError 2]）
             self._state.status = StepStatus.FAILED
@@ -187,7 +198,8 @@ class MultiScenePipeline(BasePipeline):
                 self.task_id, failed_step, e,
             )
             await self._emit(
-                "error", "failed", message, _PROGRESS_FAILED, preserve_step=True
+                "error", "failed", message, _PROGRESS_FAILED, preserve_step=True,
+                message_key=message_key, message_params=message_params,
             )
             raise
 
@@ -284,6 +296,8 @@ class MultiScenePipeline(BasePipeline):
                 duration=duration,
                 width=self._state.video_width,
                 height=self._state.video_height,
+                # U1（v7.0）：队列满时实时向前端推「排队重试中」
+                progress_callback=self._submit_progress_callback("video_gen", 0.40),
             )
             scene.video_id = video_id
             self._save_task_json(scene_dir, {"video_id": video_id})

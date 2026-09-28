@@ -12,6 +12,9 @@
 > - 大版本回归：`docs/dev/regression_test_plan.md`（含场景矩阵、命令、报告）
 > - 测试覆盖 & CI：`docs/dev/test_coverage_and_ci.md`
 > - SonarCloud 分析工作流：`docs/dev/sonarcloud_analysis_workflow.md`（提交代码 → Sonar 分析的完整链路、触发条件、配置项、故障排查）
+> - **上游接口实测行为**：`docs/dev/agnes_video_upstream_behavior.md`（apihub 视频接口的端点可用性、任务 id 语义、失败以 HTTP 200 返回、队列饱和与 15 分钟推理硬闸、分辨率吸附与 2.5-flash 竖屏画面躺倒；改重试策略 / 错误透出 / 回归判定前必读）
+> - 上游可靠性加固（v7.0）：`docs/plans/v7.0/upstream_error_handling_plan.md`（Issue #75 实测发现的 U1–U8 优化点 + 用户诉求对照，🟢 已实施；U7 多 Key 分池实测待补，见该文 §六实施记录与回归计划 §十一）
+>   - 相关开关：`AGNES_VIDEO_QUEUE_RETRY_SECONDS`（队列满独立重试预算，默认 900s）、`AGNES_FIX_V25_PORTRAIT_ROTATION`（2.5 竖屏躺倒探测校正，默认关闭）
 > - 优化路线图：`docs/plans/v6.0/optimization_roadmap.md`（合并版，现行唯一路线图，计划 v6 版本线内完成；已取代并废弃 `docs/plans/v5.0/optimization_roadmap.md`）
 > - 待调研存档：`docs/plans/optimization-research/README.md`
 > - 发版规范：`docs/dev/release_process.md`（版本号规则 + 新增内容规范 + 发布流程）

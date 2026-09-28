@@ -185,6 +185,15 @@ class BaseTaskState(BaseModel):
     current_progress: float = 0.0  # 0.0 ~ 1.0
     current_message: str = ""     # 人类可读消息
 
+    # ── v7.0：结构化消息（后端给 key + 参数，前端用自己的 22 语言 i18n 渲染）──
+    # 背景：``current_message`` 由后端按 zh/en 双基线译好整句下发，其余 20 语言
+    # 只能回退 zh——用户切到日语/阿拉伯语界面时看到的仍是中文句。改为同时下发
+    # i18n key 与插值参数：前端命中 key 就用前端 22 语言文案渲染，未命中（旧版
+    # 前端 / 未覆盖的 key）时回退 ``current_message``，行为与升级前一致。
+    # 范例：manual_config.current_checkpoint 就是「后端给标识、前端映射文案」。
+    current_message_key: str = ""
+    current_message_params: dict = Field(default_factory=dict)
+
     # ── v6.2.2：完整异常 traceback（诊断端点/前端反馈报告暴露，定位环境级异常如 [WinError 2]）──
     # 流水线通用异常捕获时用 traceback.format_exc() 落盘，供用户无需翻服务端控制台即可
     # 复制完整报错到 issue。默认空串，保证旧 task_state.json 加载向后兼容。

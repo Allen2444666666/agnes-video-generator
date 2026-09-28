@@ -239,6 +239,8 @@ class AnchorPipeline(MultiScenePipeline):
                 duration=5,
                 width=vw,
                 height=vh,
+                # U1（v7.0）：队列满时实时向前端推「排队重试中」
+                progress_callback=self._submit_progress_callback("video_gen", 0.40),
             )
             self._save_task_json(clip_dir, {"video_id": video_id})
 

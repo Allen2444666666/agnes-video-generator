@@ -85,7 +85,11 @@ export function saveModels(models: { text?: string; image?: string; video?: stri
   if (models.text) form.append('text', models.text)
   if (models.image) form.append('image', models.image)
   if (models.video) form.append('video', models.video)
-  if (models.text_provider) form.append('text_provider', models.text_provider)
+  // 回退内置 agnes 必须发**显式的 'agnes'**，不能发空串：HTTP 表单层（multipart
+  // 与 urlencoded 都一样）会把空串字段解析成「字段缺席」，后端 `Form(None)` 收到
+  // None = 不修改，于是 config.json 里仍留着第三方供应商，文本调用继续打第三方
+  // 端点（issue：切回 agnes 无效）。
+  if (models.text_provider !== undefined) form.append('text_provider', models.text_provider || 'agnes')
   return apiFetch('/api/config/models', { method: 'POST', body: form })
 }
 // ── 文本模型供应商（v7.0 可插拔多供应商）──

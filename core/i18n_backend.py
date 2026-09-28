@@ -380,6 +380,19 @@ CATALOG: Dict[str, Dict[str, str]] = {
         "zh": "等待视频生成 {vid}...",
         "en": "Waiting for video generation {vid}...",
     },
+    # U1（v7.0）：点名 Agnes + 原样报错（HTTP 码 / body code）+ 错峰重试建议。
+    # 参数：n 重试次序、waited 已等分钟、status HTTP 状态码、code 上游 body code
+    # 说明：这里是**后端兜底**（zh/en 双基线）；前端命中同名 key 时用前端
+    # 22 语言文案渲染，见 models/task.py 的 current_message_key。
+    "progress.video.queue_full": {
+        "zh": "Agnes 视频队列已满（HTTP {status} · {code}），正在排队重试（第 {n} 次 / 已等 {waited} 分钟）。建议错峰重试或稍后再试。",
+        "en": "Agnes video queue is full (HTTP {status} · {code}), retrying (attempt {n} / waited {waited} min). Please retry later, ideally off-peak.",
+    },
+    # 队列重试预算耗尽（未产生任务、未消耗配额）：同样点名 Agnes + 原样报错 + 可行动作
+    "error.video.queue_full": {
+        "zh": "Agnes 视频队列已满（HTTP {status} · {code}），重试 {waited} 分钟后仍未排进队，本次未生成任务（不消耗配额）。建议错峰重试或换用其他视频模型。",
+        "en": "Agnes video queue is full (HTTP {status} · {code}); after retrying for {waited} min the job still never entered the queue, so nothing was generated (no quota used). Please retry later, ideally off-peak, or switch to another video model.",
+    },
     "progress.simple.completed": {
         "zh": "视频生成完成",
         "en": "Video generation complete",
