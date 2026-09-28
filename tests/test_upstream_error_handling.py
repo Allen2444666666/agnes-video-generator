@@ -1,4 +1,4 @@
-"""上游视频接口可靠性加固回归（v7.0 U1/U2/U3/U5）。
+"""上游视频接口可靠性加固回归（v7.0 U1/U2/U3/U5/U9）。
 
 对应计划：``docs/plans/v7.0/upstream_error_handling_plan.md``
 事实依据：``docs/dev/agnes_video_upstream_behavior.md``
@@ -8,6 +8,8 @@
 - U2 ``_upstream_error`` 统一提取（提交侧 body / 轮询侧 error 对象）+ 异常文案
 - U3 ``_needs_portrait_rotation_fix`` 躺倒签名判定（默认开关关闭）
 - U5 ``progress`` 恒为 0 时任务仍能正常完成
+- U9 轮询侧 404 =「任务未就绪」中间态（不消耗连续失败配额，仅周期性 info 日志）
+- U9 轮询侧 404 视为「任务未就绪」中间态（不消耗连续失败配额、不进 error_logs）
 
 约定：测试在协议边界 mock ``requests``（HTTP 层），保留 API 类全部内部逻辑。
 """
@@ -324,6 +326,46 @@ async def test_wait_for_video_returns_url_when_progress_zero(api, monkeypatch):
     out = await api.wait_for_video("vid")
     assert out.data == "https://cdn.example/v.mp4"
     assert out.fix_rotation is False  # 非 2.5 模型 / 开关默认关闭
+
+
+# ── U9：轮询侧 404 =「任务未就绪」中间态 ────────────────────────────
+
+
+async def test_poll_404_does_not_burn_failure_budget(api, monkeypatch):
+    """U9：连续 404 不计入 max_consecutive_failures，任务最终仍能完成。
+
+    场景：上游高峰期任务记录入库可见性延迟（实测从 ~20s 劣化到 10min+），
+    连续 404 次数超过普通网络错误的容忍上限（10）后任务才可见。
+    """
+    calls = []
+
+    def fake_get(url, headers=None, timeout=None):
+        calls.append(1)
+        if len(calls) <= 15:
+            return FakeResponse(404, {"error": {"code": 404,
+                                                "message": "task not found (request id: x)"}})
+        return FakeResponse(200, {"status": "completed", "progress": 100,
+                                  "video_url": "https://cdn.example/v.mp4"})
+
+    monkeypatch.setattr(av.requests, "get", fake_get)
+    result = await api._poll_task("vid", interval=0.01)
+    assert result["status"] == "completed"
+    assert len(calls) == 16  # 15 次 404 中间态 + 1 次可见即成功，未被 10 次上限截断
+
+
+async def test_poll_404_forever_falls_back_to_poll_timeout(api, monkeypatch):
+    """U9：任务记录始终不出现 → 仍受 max_poll_duration 兜底，不无限等。
+
+    超时异常不属于「服务端确认失败」（``is_remote_video_failure`` 为 False），
+    续传必须保留 video_id 以免重复提交浪费配额。
+    """
+    monkeypatch.setattr(
+        av.requests, "get",
+        lambda *a, **k: FakeResponse(404, {"error": {"code": 404,
+                                                     "message": "task not found"}}),
+    )
+    with pytest.raises(RuntimeError, match="Polling timed out"):
+        await api._poll_task("vid", interval=0.01, max_poll_duration=0.05)
 
 
 # ── U3：竖屏躺倒探测签名（默认关闭） ────────────────────────────────

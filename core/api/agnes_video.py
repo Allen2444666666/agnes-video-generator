@@ -461,6 +461,12 @@ class AgnesVideoAPI:
         last_status = ""
         poll_count = 0
         consecutive_failures = 0
+        # U9（v7.0.4）：提交返回的是网关路由键，任务记录入库可见有延迟——
+        # 轮询侧 404 "task not found" 是「任务还没准备好」的中间态而非错误
+        # （实测上游高峰期可见性延迟可从历史 ~20s 劣化到 10min+），单独计数、
+        # 只做周期性 info 日志，不进 error_logs、不消耗连续失败配额；
+        # 最终兜底是循环顶部的 max_poll_duration 整体超时。
+        not_found_count = 0
         start_time = asyncio.get_event_loop().time()
         # 2.5 系列查询需带 model_name（text 模式可省略，但带上更通用）
         model_param = f"&model_name={self.model}" if is_v25_video_model(self.model) else ""
@@ -511,6 +517,18 @@ class AgnesVideoAPI:
                         logger.warning("[KeyRotation] HTTP 429 on poll, 换 Key 立即重试")
                         continue
                     break
+                # U9：404（task not found）= 记录尚未在网关任务库可见，中间态
+                if resp.status_code == 404:
+                    not_found_count += 1
+                    poll_count += 1  # 计入自适应间隔与周期日志的推进
+                    if not_found_count == 1 or not_found_count % 10 == 0:
+                        logger.info(
+                            f"[AgnesVideo] Video {video_id[:16]}... not yet visible "
+                            f"(404 task not found), poll #{not_found_count}, "
+                            f"elapsed {elapsed:.0f}s"
+                        )
+                    await asyncio.sleep(_adaptive_poll_interval(interval, poll_count))
+                    continue
                 resp.raise_for_status()
                 result = resp.json()
                 status = result.get("status", "")
