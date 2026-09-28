@@ -102,11 +102,12 @@ async function onKeyDomainChange(item: any, domain: string) {
   await saveKeyDomain(item.id, domain)
 }
 
-// 折叠状态（4 个配置面板）
+// 折叠状态（4 个配置面板）：默认全部折叠——供应商管理 / 模型选择 / 工作目录 /
+// 隐私设置首屏均只显示标题行，用户手动展开后由 *_manual 偏好记忆（见 initCollapse）
 const collapsed = reactive<Record<string, boolean>>({
-  apikey: false,
-  model: false,
-  workspace: false,
+  apikey: true,
+  model: true,
+  workspace: true,
   privacy: true,
 })
 
