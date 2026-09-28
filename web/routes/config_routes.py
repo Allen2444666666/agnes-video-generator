@@ -496,7 +496,13 @@ async def save_models(
     text 为必填（目前仅文本模型开放选择）；image/video 接受但不强制，
     置灰时前端仍会随配置保存其值（缺省回退到当前默认值）。
 
-    ``text_provider`` 可选：非空时一并写入 ``models.text_provider``（空串 = 回退 agnes）。
+    ``text_provider`` 可选：收到该字段时写入 ``models.text_provider``；
+    缺省（字段缺席）= 不修改。
+
+    ⚠️ **不要依赖空串表达「回退 agnes」**：HTTP 表单层（multipart 与 urlencoded
+    均然）会把空串字段解析为 ``None``，与字段缺席无法区分，于是切换回 agnes
+    时旧供应商会被保留、文本调用继续打第三方端点。前端必须显式发送
+    ``'agnes'``（``resolve_text_chat`` 对 ``""`` 与 ``"agnes"`` 都走 agnes 分支）。
     """
     if text is None or text.strip() == "":
         raise HTTPException(status_code=400, detail=translate("config.text_model_empty"))

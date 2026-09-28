@@ -734,6 +734,60 @@ class TestProbeEndpoint:
         assert "probe failed" in resp.json()["error"]
 
 
+class TestSaveModelsProviderRevert:
+    """回归（issue）：切回内置 agnes 必须真正落盘。
+
+    协议事实：HTTP 表单层（multipart 与 urlencoded 均然）会把**空串字段解析成
+    None**，与「字段缺席」无法区分，因此``Form(None)`` 收到的是 None = 不修改。
+    表达「回退 agnes」只能靠显式的 ``'agnes'`` 值——前端此前既跳过了空串、
+    即使发送也拿不到，故切换回 agnes 后 config.json 仍保留第三方供应商。
+    """
+
+    def _stub(self, monkeypatch, calls):
+        monkeypatch.setattr(
+            config_routes, "set_selected_models",
+            lambda **kw: {"text": kw.get("text") or "", "image": "", "video": ""},
+        )
+        monkeypatch.setattr(config_routes, "set_selected_text_provider", lambda p: calls.update(p=p))
+        monkeypatch.setattr(
+            config_routes, "get_selected_models",
+            lambda: {"text": "m", "image": "", "video": ""},
+        )
+
+    def test_explicit_agnes_reverts_selection(self, client, monkeypatch):
+        """显式 'agnes' 是唯一可靠的回退表达。"""
+        calls = {}
+        self._stub(monkeypatch, calls)
+        resp = client.post("/api/config/models", data={"text": "m", "text_provider": "agnes"})
+        assert resp.status_code == 200
+        assert resp.json()["ok"] is True
+        assert calls.get("p") == "agnes"
+
+    def test_empty_string_is_indistinguishable_from_missing(self, client, monkeypatch):
+        """空串在传输层即变为 None → 后端视为「不修改」（文档化行为）。"""
+        calls = {}
+        self._stub(monkeypatch, calls)
+        resp = client.post("/api/config/models", data={"text": "m", "text_provider": ""})
+        assert resp.status_code == 200
+        assert "p" not in calls
+
+    def test_missing_field_keeps_selection(self, client, monkeypatch):
+        """字段缺席 = 不修改（保护只改 image/video 的保存路径）。"""
+        calls = {}
+        self._stub(monkeypatch, calls)
+        resp = client.post("/api/config/models", data={"text": "m"})
+        assert resp.status_code == 200
+        assert "p" not in calls
+
+    def test_resolve_text_chat_treats_agnes_and_empty_as_builtin(self, monkeypatch):
+        """无论落盘值是 'agnes' 还是 ''，分派都必须走内置 agnes。"""
+        import core.config as core_config
+
+        for stored in ("agnes", ""):
+            monkeypatch.setattr(core_config, "get_selected_text_provider", lambda s=stored: s)
+            assert core_config.resolve_text_chat()["kind"] == "agnes"
+
+
 class TestListEndpoint:
     def test_list_includes_builtin_first_and_masks(self, client, monkeypatch):
         monkeypatch.setattr(

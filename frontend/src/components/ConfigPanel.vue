@@ -227,6 +227,10 @@ const textProviderComposite = computed<string>({
     appState.textProviderSelected = val
     const models = textModelsForProvider(val)
     if (models.length > 0) appState.models.text = models[0]
+    // v7.0 修复：切换供应商立即落盘。此前仅改内存状态，后端按 config.json 里的
+    // 旧值分派，出现「UI 已切回 agnes、实际仍调用第三方供应商接口」的报错。
+    // 无可选模型时不保存（后端校验 text 必填），交由用户选模型后点保存。
+    if (appState.models.text) void saveModels()
   },
 })
 // 某供应商的模型列表（agnes → 内置列表；自定义 → providerModelCache）
