@@ -14,7 +14,11 @@ from core.api.agnes_video import AgnesVideoAPI
 from core.config import DEFAULT_TEXT_MODEL
 from core.pipelines import BasePipeline, PipelineShutdown
 from models.task import SimpleVideoTask, StepStatus
-from utils.network import describe_network_error
+from utils.network import (
+    describe_network_error,
+    describe_queue_full_error,
+    queue_full_message_params,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -85,7 +89,14 @@ class SimpleVideoPipeline(BasePipeline):
         except Exception as e:
             # 网络 / 域名解析类故障翻译成可自助排查的提示（issue #56/#57）
             # v7.0（issue #64）：按 state.ui_language 输出中/英文，避免英文界面看到中文诊断
-            message = describe_network_error(e, lang=self._ui_lang()) or str(e)
+            # v7.0 U1：队列满优先走结构化提示（前端按 22 语言渲染，后端给 zh/en 兜底）
+            message = (
+                describe_queue_full_error(e, lang=self._ui_lang())
+                or describe_network_error(e, lang=self._ui_lang())
+                or str(e)
+            )
+            message_key = "error.video.queue_full" if queue_full_message_params(e) else None
+            message_params = queue_full_message_params(e) or None
             failed_step = self._state.current_step if self._state else ""
             # 持久化完整 traceback，供诊断端点/前端反馈报告暴露（定位环境级异常如 [WinError 2]）
             self._state.status = StepStatus.FAILED
@@ -99,7 +110,8 @@ class SimpleVideoPipeline(BasePipeline):
             )
             logger.error("[Simple] Task %s failed at step '%s': %s", self.task_id, failed_step, e)
             await self._emit(
-                "error", "failed", message, _PROGRESS_FAILED, preserve_step=True
+                "error", "failed", message, _PROGRESS_FAILED, preserve_step=True,
+                message_key=message_key, message_params=message_params,
             )
             raise
 

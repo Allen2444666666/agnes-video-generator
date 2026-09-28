@@ -2,7 +2,7 @@ import { ref, computed } from 'vue'
 import { appState } from '@/store'
 import { getStepsForType, isStepDoneInState } from '@/steps'
 import * as api from '@/api'
-import { t, escapeHtml } from '@/i18n'
+import { t, tf, escapeHtml } from '@/i18n'
 import { useGa } from './useGa'
 import { useArtifacts } from './useArtifacts'
 import { useToast } from './useToast'
@@ -68,6 +68,24 @@ function markCompletedStepsFromState(state: TaskState) {
 
 function setProgressMessageHtml(html: string) {
   progressMessage.value = html
+}
+
+/**
+ * v7.0 U1：渲染后端下发的进度/失败消息。
+ *
+ * 后端只按 zh/en 双基线译好整句，其余 20 语言会回退中文。因此后端同时下发
+ * ``current_message_key`` + ``current_message_params``：前端命中该 key 时
+ * 用自己的 22 语言文案渲染；未命中（旧后端 / 未覆盖的 key）时回退
+ * ``current_message``，行为与升级前一致。
+ */
+function renderBackendMessage(state: TaskState): string {
+  const key = state.current_message_key || ''
+  if (key) {
+    const rendered = tf(key, state.current_message_params || {})
+    // tf 未命中会原样返回 key —— 此时必须回退，不能把 key 显示给用户
+    if (rendered !== key) return rendered
+  }
+  return state.current_message || ''
 }
 
 const currentRunningStep = computed(() => {
@@ -138,7 +156,7 @@ async function mountProgressPage(taskId: string, dirName?: string | null) {
     clearRunning()
   } else if (st === 'failed') {
     taskFailed.value = true
-    failedMessage.value = state.current_message || t('genFailedMsg')
+    failedMessage.value = renderBackendMessage(state) || t('genFailedMsg')
     retryCount.value = getRetryCount(taskId)
     clearRunning()
   } else if (st === 'pending' && state.current_status === 'awaiting_user') {
@@ -222,7 +240,10 @@ async function pollTaskProgress(taskId: string) {
     progressPct.value = Math.round((state.current_progress || 0) * 100)
     if (state.current_message) {
       // 0.8：后端消息最终由 v-html 渲染，必须转义
-      progressMessage.value = escapeHtml(state.current_message)
+      // v7.0：有结构化 key 时用前端 22 语言文案渲染（后端只有 zh/en 兜底句）
+      progressMessage.value = escapeHtml(
+        renderBackendMessage(state),
+      )
     }
 
     markCompletedStepsFromState(state)
@@ -261,7 +282,7 @@ async function pollTaskProgress(taskId: string) {
       })
       clearRunning()
       taskFailed.value = true
-      failedMessage.value = state.current_message || t('genFailedMsg')
+      failedMessage.value = renderBackendMessage(state) || t('genFailedMsg')
       retryCount.value = getRetryCount(taskId)
     }
 

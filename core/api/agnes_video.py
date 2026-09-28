@@ -129,6 +129,27 @@ def _probe_video_size(path: str) -> tuple:
     return None, None
 
 
+class AgnesQueueFullError(RuntimeError):
+    """U1（v7.0）：队列类 503 在预算内始终没排进队——**未产生任务、未消耗配额**。
+
+    消息体只放技术事实（日志/traceback 用）；用户可见文案交给 UI 层：
+    - 前端：按 ``i18n key = error.video.queue_full`` + 参数用 22 语言渲染；
+    - 后端兜底：``core.i18n_backend`` 的 zh/en（``utils.network.describe_queue_full_error``）。
+
+    注意：``is_remote_video_failure`` 对本类返回 False（提交阶段就被拒，
+    video_id 都不存在，自然不需要「服务端确认失败才丢弃 video_id」的判定）。
+    """
+
+    def __init__(self, status: int, code: str, waited_s: int):
+        super().__init__(
+            f"Agnes video queue full (HTTP {status} · {code}) after {waited_s}s "
+            f"of retrying; no job was created"
+        )
+        self.queue_full_status = status
+        self.queue_full_code = code
+        self.queue_full_waited_s = waited_s
+
+
 class VideoTaskCancelled(RuntimeError):
     """用户停止任务导致的取消（优化路线图 0.2）。
 
@@ -644,14 +665,6 @@ class AgnesVideoAPI:
                             )
                         waited = time.monotonic() - queue_started
                         if time.monotonic() >= queue_deadline:
-                            # 用户可见：点名 Agnes + 原样报错 + 可行动作（错峰重试）
-                            error_msg = (
-                                f"Agnes video queue is full (HTTP {resp.status_code}"
-                                f"{f' · {code}' if code else ''}) and still busy after "
-                                f"{int(waited)}s of retrying — no job was created. "
-                                f"Please retry later, ideally off-peak, or switch to "
-                                f"another video model."
-                            )
                             collect_error(
                                 "video", "submit_video",
                                 prompt=payload.get("prompt", ""),
@@ -665,7 +678,11 @@ class AgnesVideoAPI:
                                     "waited_s": int(waited),
                                 },
                             )
-                            raise RuntimeError(error_msg)
+                            # 结构化异常：用户可见文案由 UI 层按 22 语言渲染，
+                            # 此处只保留技术事实（含 HTTP 码 / body code / 等待时长）
+                            raise AgnesQueueFullError(
+                                status=resp.status_code, code=code, waited_s=int(waited),
+                            )
                         delay = _QUEUE_RETRY_BASE_DELAY + random.uniform(0, _QUEUE_RETRY_JITTER)
                         queue_retries += 1
                         logger.warning(

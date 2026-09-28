@@ -43,6 +43,8 @@
   "vm720pHint": "720P = short edge 720px; output size scales with ratio",
   "vmUnadaptedHint": "Hindi pa sinusuportahan ang modelong ito sa kasalukuyang bersyon; mag-upgrade.",
   "vmPortraitRotateHint": "Ang portrait (9:16) ng 2.5 series ay may depekto sa pag-ikot; gamitin ang 16:9 o Video 2.0.",
+  "progress.video.queue_full": "Puno na ang video queue ng Agnes (HTTP {status} · {code}), sinusubukan muli (pagsubok {n} / naghintay {waited} min). Pakisubukan muli mamaya, mas mainam sa hindi peak na oras.",
+  "error.video.queue_full": "Puno na ang video queue ng Agnes (HTTP {status} · {code}); pagkatapos ng {waited} min na pagsubok muli, hindi pumasok ang task sa queue at walang nagawa (walang nagamit na quota). Subukan muli sa hindi peak na oras o gumamit ng ibang video model.",
   "footerVersion": "Bersyon",
   "modelSync": "I-refresh ang Listahan",
   "modelSyncIdle": "Hindi naka-sync",

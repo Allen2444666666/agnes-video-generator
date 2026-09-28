@@ -11,6 +11,10 @@ export interface TaskState {
   current_status?: string
   current_progress?: number
   current_message?: string
+  // v7.0：结构化消息——后端下发 i18n key + 插值参数，前端用 22 语言文案渲染；
+  // 未命中 key（旧后端 / 未覆盖）时回退 current_message。
+  current_message_key?: string
+  current_message_params?: Record<string, string | number>
   final_video_file?: string
   idea?: string
   prompt?: string

@@ -175,3 +175,55 @@ def describe_network_error(exc: BaseException, lang: Optional[str] = None) -> st
     if is_dns:
         return translate("network.dns_failed", lang, target=target)
     return translate("network.connect_blocked", lang, target=target)
+
+
+def describe_queue_full_error(exc: BaseException, lang: Optional[str] = None) -> str:
+    """把「Agnes 视频队列已满」异常翻译成用户可读提示（按 UI 语言）。
+
+    与 ``describe_network_error`` 同一层：只负责**兜底句**（后端 zh/en 双基线）。
+    前端优先使用任务状态里的 ``current_message_key`` +
+    ``current_message_params`` 用自己的 22 语言文案渲染，本函数只在前端未命中
+    key（旧版前端 / 诊断报告 / API 直读）时生效。
+
+    Args:
+        exc: 流水线捕获到的原始异常（可能是包装后的异常链）。
+        lang: 目标 UI 语言；``None`` 时走 ``resolve_lang``。
+
+    Returns:
+        用户可读提示；非队列满异常返回空串，调用方回退到原始异常文本。
+    """
+    from core.i18n_backend import translate
+
+    target = _find_queue_full(exc)
+    if target is None:
+        return ""
+    status = getattr(target, "queue_full_status", "")
+    code = getattr(target, "queue_full_code", "")
+    waited_s = int(getattr(target, "queue_full_waited_s", 0) or 0)
+    return translate(
+        "error.video.queue_full", lang,
+        status=status, code=code, waited=max(1, round(waited_s / 60)),
+    )
+
+
+def queue_full_message_params(exc: BaseException) -> dict:
+    """返回 ``error.video.queue_full`` 的插值参数（供前端 22 语言渲染）。
+
+    非队列满异常返回空 dict，调用方据此决定是否下发结构化 key。
+    """
+    target = _find_queue_full(exc)
+    if target is None:
+        return {}
+    return {
+        "status": getattr(target, "queue_full_status", ""),
+        "code": getattr(target, "queue_full_code", ""),
+        "waited": max(1, round(int(getattr(target, "queue_full_waited_s", 0) or 0) / 60)),
+    }
+
+
+def _find_queue_full(exc: BaseException) -> Optional[BaseException]:
+    """在异常链里找队列满异常（duck typing，避免 utils ← core.api 的导入耦合）。"""
+    for item in _chain_exceptions(exc):
+        if getattr(item, "queue_full_status", None):
+            return item
+    return None

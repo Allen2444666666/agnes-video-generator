@@ -160,7 +160,11 @@ async def test_queue_full_uses_separate_retry_track(api, monkeypatch):
 
 
 async def test_queue_full_budget_exhausted_raises(api, monkeypatch):
-    """队列预算到期后报错文案须点明「队列满」而非笼统 server error。"""
+    """队列预算到期抛结构化异常：带 HTTP 码 / body code / 等待时长，供 UI 多语言渲染。
+
+    异常消息本身只含技术事实（不写死语种），用户可见文案由
+    前端 i18n key（``error.video.queue_full``）或后端兜底 translate 生成。
+    """
     monkeypatch.setattr(
         "core.config.get_settings",
         lambda: SimpleNamespace(
@@ -170,8 +174,27 @@ async def test_queue_full_budget_exhausted_raises(api, monkeypatch):
         ),
     )
     monkeypatch.setattr(av.requests, "post", lambda *a, **k: _queue_full_response())
-    with pytest.raises(RuntimeError, match="queue"):
+    with pytest.raises(av.AgnesQueueFullError) as exc_info:
         await api._submit_with_retry({"prompt": "x"}, "t2v")
+
+    err = exc_info.value
+    assert err.queue_full_status == 503
+    assert err.queue_full_code == "video_queue_full"
+    # 提交阶段就被拒 → 未产生任务，不属于「服务端确认失败」，无需丢弃 video_id
+    assert av.is_remote_video_failure(err) is False
+    # 后端兜底：zh/en 双基线渲染（点名 Agnes + 原样报错 + 错峰建议）
+    from utils.network import describe_queue_full_error, queue_full_message_params
+    assert queue_full_message_params(err) == {
+        "status": 503, "code": "video_queue_full", "waited": 1,
+    }
+    zh = describe_queue_full_error(err, lang="zh")
+    assert "Agnes" in zh and "503" in zh and "video_queue_full" in zh
+    assert "错峰" in zh
+    en = describe_queue_full_error(err, lang="en")
+    assert "Agnes" in en and "off-peak" in en
+    # 非队列满异常不误判
+    assert describe_queue_full_error(RuntimeError("boom"), lang="zh") == ""
+    assert queue_full_message_params(RuntimeError("boom")) == {}
 
 
 async def test_fail_to_fetch_task_goes_queue_track(api, monkeypatch):

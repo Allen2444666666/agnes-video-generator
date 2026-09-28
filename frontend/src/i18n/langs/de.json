@@ -48,6 +48,8 @@
   "vm720pHint": "720P = short edge 720px; output size scales with ratio",
   "vmUnadaptedHint": "Dieses Modell wird in der aktuellen Version nicht unterstützt. Bitte aktualisieren.",
   "vmPortraitRotateHint": "Hochformat (9:16) der 2.5-Serie hat einen Bilddrehungsfehler; nutzen Sie 16:9 oder Video 2.0.",
+  "progress.video.queue_full": "Die Agnes-Video-Warteschlange ist voll (HTTP {status} · {code}), neuer Versuch (Versuch {n} / gewartet {waited} Min). Bitte später erneut versuchen, idealerweise außerhalb der Stoßzeiten.",
+  "error.video.queue_full": "Die Agnes-Video-Warteschlange ist voll (HTTP {status} · {code}); nach {waited} Minuten Wiederholen kam der Auftrag nie in die Warteschlange, es wurde nichts erzeugt (kein Kontingent verbraucht). Bitte später, idealerweise außerhalb der Stoßzeiten, erneut versuchen oder ein anderes Videomodell wählen.",
   "footerVersion": "Version",
   "modelSync": "Liste aktualisieren",
   "modelSyncIdle": "Nicht synchronisiert",

@@ -43,6 +43,8 @@
   "vm720pHint": "720P = short edge 720px; output size scales with ratio",
   "vmUnadaptedHint": "Bu model mevcut sürümde desteklenmiyor; lütfen güncelleyin.",
   "vmPortraitRotateHint": "2.5 serisi dikey (9:16) modunda görüntü döndürme hatası var; 16:9 veya Video 2.0 kullanın.",
+  "progress.video.queue_full": "Agnes video kuyruğu dolu (HTTP {status} · {code}), yeniden deneniyor (deneme {n} / beklenen {waited} dk). Lütfen daha sonra, tercihen yoğun olmayan saatlerde tekrar deneyin.",
+  "error.video.queue_full": "Agnes video kuyruğu dolu (HTTP {status} · {code}); {waited} dk yeniden denedikten sonra iş kuyruğa hiç girmedi ve hiçbir şey üretilmedi (kota harcanmadı). Yoğun olmayan saatlerde tekrar deneyin veya başka bir video modeli kullanın.",
   "footerVersion": "Sürüm",
   "modelSync": "Listeyi Yenile",
   "modelSyncIdle": "Senkronize edilmedi",

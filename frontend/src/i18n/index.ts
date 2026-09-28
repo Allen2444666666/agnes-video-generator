@@ -52,6 +52,17 @@ export function t(key: string): string {
   return val
 }
 
+// v7.0 U1：带插值参数的翻译（后端下发的 i18n key + params 用此渲染）。
+// 占位符为 {name} 形式；同时支持 {count} 这类命名参数。
+export function tf(key: string, params?: Record<string, string | number>): string {
+  const template = t(key)
+  if (!params) return template
+  return template.replace(/\{(\w+)\}/g, (m, name: string) => {
+    const v = params[name]
+    return v === undefined || v === null ? m : String(v)
+  })
+}
+
 export function applyLanguage(lang: string) {
   currentLang.value = lang || 'zh'
   try {
@@ -108,7 +119,7 @@ export function useI18n() {
     return allDefaults.has(value) || value === ''
   }
 
-  return { lang, currentLang, t, switchLang, isDefaultValue, applyLanguage, loadingLang, loadLang }
+  return { lang, currentLang, t, tf, switchLang, isDefaultValue, applyLanguage, loadingLang, loadLang }
 }
 
 // 初始化语言（模块加载后立即同步）
