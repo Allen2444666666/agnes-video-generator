@@ -459,7 +459,7 @@ for name, color in [('test_ref.png', (100,150,200)), ('test_end.png', (200,150,1
 
 | ID | 条目 | 验证要点 |
 |----|------|---------|
-| N1 | U1 队列满独立轨道 | mock 连续 5 次 `503 video_queue_full` 后成功 → 调用次数（6）可超过 `max_retries=3`；进度回调按 `("queue_full", n)` 递增 |
+| N1 | U1 队列满独立轨道 | mock 连续 5 次 `503 video_queue_full` 后成功 → 调用次数（6）可超过 `max_retries=3`；进度回调载荷含 `attempt` 递增、`status=503`、`code=video_queue_full` 与原始 `message` |
 | N2 | U1 队列预算到期 | 预算置 0 → `RuntimeError` 文案含 "queue"，不再是笼统 server error |
 | N3 | U1 普通 5xx 不扩容 | 非队列类 5xx 仍只 `max_retries` 次；`error_message` 透出 body `message`，`extra.upstream_code` 有值 |
 | N4 | U1 `fail_to_fetch_task` | 与 `video_queue_full` 同轨，第 2 次尝试成功 |
@@ -473,7 +473,7 @@ for name, color in [('test_ref.png', (100,150,200)), ('test_end.png', (200,150,1
 
 | ID | 场景 | 验证要点 |
 |----|------|---------|
-| V1 | 队列饱和实测 | 2.5-flash 在饱和时段提交 → 进度面板出现「上游视频队列已满，排队重试中（第 N 次 / 已等 X 分钟）」；日志 `Queue full on ... queue retry #N`；不消耗普通 5xx 配额 |
+| V1 | 队列饱和实测 | 2.5-flash 在饱和时段提交 → 进度面板出现「Agnes 视频队列已满（HTTP 503 · video_queue_full），正在排队重试（第 N 次 / 已等 X 分钟）。建议错峰重试或稍后再试。」（en 同理点名 Agnes）；日志 `Queue full on ... queue retry #N`；不消耗普通 5xx 配额；预算耗尽时失败文案含 Agnes + 原始报错 + 错峰建议 |
 | V2 | 错误透出实测 | 构造上游 `status=failed` → 失败面板展示含 `code=` 的上游原文；`error_logs/*.json` 的 `error_message` 为可读文本 |
 | V3 | 竖屏方向实测 | 2.5-flash + 9:16 单场景任务：UI 提示可见；`AGNES_FIX_V25_PORTRAIT_ROTATION=1` 时日志出现 `[UpstreamRotate]` 且成片方向正确（`ffprobe` 容器与画面方向一致）；默认关闭时行为与升级前完全一致 |
 | V4 | 未适配模型提示 | 构造上游有、本地能力表无的视频模型 → 下拉项带 `⚠` + 未适配提示；不再静默按 v2.0 像素协议提交 |

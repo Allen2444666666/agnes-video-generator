@@ -380,9 +380,11 @@ CATALOG: Dict[str, Dict[str, str]] = {
         "zh": "等待视频生成 {vid}...",
         "en": "Waiting for video generation {vid}...",
     },
+    # U1（v7.0）：点名 Agnes + 原样报错（HTTP 码 / body code）+ 错峰重试建议。
+    # 参数：n 重试次序、waited 已等分钟、status HTTP 状态码、code 上游 body code
     "progress.video.queue_full": {
-        "zh": "上游视频队列已满，排队重试中（第 {n} 次 / 已等 {waited} 分钟）...",
-        "en": "Upstream video queue is full, retrying (attempt {n} / waited {waited} min)...",
+        "zh": "Agnes 视频队列已满（HTTP {status} · {code}），正在排队重试（第 {n} 次 / 已等 {waited} 分钟）。建议错峰重试或稍后再试。",
+        "en": "Agnes video queue is full (HTTP {status} · {code}), retrying (attempt {n} / waited {waited} min). Please retry later, ideally off-peak.",
     },
     "progress.simple.completed": {
         "zh": "视频生成完成",

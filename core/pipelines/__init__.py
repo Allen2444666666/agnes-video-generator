@@ -381,22 +381,34 @@ class BasePipeline(ABC):
         """U1（v7.0）：提交侧进度回调，供 ``AgnesVideoAPI.submit_video`` 使用。
 
         队列类 503（``video_queue_full``）命中独立重试轨道时，经此回调把
-        「上游队列已满，排队重试中」实时推给前端（任务状态轮询读取）。
+        「Agnes 视频队列已满 + 原样报错 + 错峰建议」实时推给前端（任务状态轮询读取）。
         回调为同步函数（API 层在重试循环内直接调用），内部调度异步 ``_emit``。
+
+        Args（回调载荷 dict）：``attempt`` 重试次序、``waited_s`` 已等秒数、
+        ``status`` HTTP 状态码、``code`` 上游 body code、``message`` 上游原始文案。
         """
-        def _cb(stage: str, n: int, waited: float) -> None:
+        def _cb(stage: str, data: dict) -> None:
             if stage != "queue_full":
                 return
+            info = data or {}
+            waited = float(info.get("waited_s") or 0)
             try:
                 asyncio.get_running_loop().create_task(self._emit(
                     step, "running",
-                    self._t("progress.video.queue_full", n=n, waited=max(1, round(waited / 60))),
+                    self._t(
+                        "progress.video.queue_full",
+                        n=int(info.get("attempt") or 1),
+                        waited=max(1, round(waited / 60)),
+                        status=info.get("status") or "",
+                        code=info.get("code") or "",
+                    ),
                     progress,
                 ))
             except RuntimeError:
                 # 无运行中事件循环（理论不可达）：降级日志
                 logger.warning(
-                    f"[Pipeline] Upstream video queue full, queue retry #{n} "
+                    f"[Pipeline] Agnes video queue full (HTTP {info.get('status')} · "
+                    f"{info.get('code')}), queue retry #{info.get('attempt')} "
                     f"(waited {waited:.0f}s)"
                 )
         return _cb

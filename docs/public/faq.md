@@ -40,14 +40,15 @@ If it still fails after several retries (≥ 2), the feedback area **auto-expand
 
 ### The task sits at 0% for a very long time, then fails. Is my setup broken?
 
-Usually not. Agnes video has a **free queue that can be saturated for 10+ minutes** — during that window every submission is rejected with `503 video_queue_full` and *no* job is created (nothing is consumed, nothing is lost). This is upstream capacity, not your prompt or configuration.
+Usually not. For free video models such as **Video 2.5 Flash, Agnes keeps a shared inference queue that can stay saturated for 10+ minutes** — during that window every submission is rejected with `503 video_queue_full` (the raw message is `video queue is full, please retry later (request id: …)`) and *no* job is created (nothing is consumed, nothing is lost). This is Agnes-side capacity, not your prompt or configuration.
 
 As of **v7.0**, the app handles this explicitly:
 
-- A queue-full rejection no longer counts against the normal retry budget. It moves to a **dedicated retry track** (default budget 900s, configurable via `AGNES_VIDEO_QUEUE_RETRY_SECONDS`), retrying every 30–60s, and the progress panel shows *"Upstream video queue is full, retrying (attempt N / waited X min)"*.
-- Only when that budget is exhausted do you get a failure — and the message now says the **queue was full**, instead of a generic `HTTP 503: server error`.
+- A queue-full rejection no longer counts against the normal retry budget. It moves to a **dedicated retry track** (default budget 900s, configurable via `AGNES_VIDEO_QUEUE_RETRY_SECONDS`), retrying every 30–60s.
+- The progress panel names the cause and keeps the raw error visible, e.g. `Agnes 视频队列已满（HTTP 503 · video_queue_full），正在排队重试（第 3 次 / 已等 5 分钟）。建议错峰重试或稍后再试。` / `Agnes video queue is full (HTTP 503 · video_queue_full), retrying (attempt 3 / waited 5 min). Please retry later, ideally off-peak.`
+- Only when that budget is exhausted do you get a failure — and the message names Agnes, quotes the raw `HTTP 503 · video_queue_full`, and tells you to **retry later / off-peak or switch model**, instead of a generic `HTTP 503: server error`.
 
-What you can do: wait and retry later (off-peak hours help), switch to another model, or add more API keys (each key has its own quota).
+**What you can do:** retry during off-peak hours, switch to another video model (Video 2.0 uses a separate queue and often still accepts jobs), or add more API keys (each key has its own quota).
 
 ### Generation timed out after ~15 minutes with "inference not finished after 15 minutes"
 

@@ -147,13 +147,16 @@ async def test_queue_full_uses_separate_retry_track(api, monkeypatch):
 
     vid = await api._submit_with_retry(
         {"prompt": "x"}, "t2v",
-        progress_callback=lambda stage, n, waited: progress.append((stage, n)),
+        progress_callback=lambda stage, data: progress.append((stage, data)),
     )
 
     assert vid == "vid-ok"
     assert len(calls) == 6  # 5 次队列退避 + 1 次成功，未被 max_retries=3 截断
-    assert progress == [("queue_full", 1), ("queue_full", 2), ("queue_full", 3),
-                        ("queue_full", 4), ("queue_full", 5)]
+    assert [s for s, _ in progress] == ["queue_full"] * 5
+    # 载荷须带上原样报错（HTTP 码 + body code），供前端拼出「Agnes 队列已满」提示
+    assert [d["attempt"] for _, d in progress] == [1, 2, 3, 4, 5]
+    assert all(d["status"] == 503 and d["code"] == "video_queue_full" for _, d in progress)
+    assert all("queue is full" in (d["message"] or "") for _, d in progress)
 
 
 async def test_queue_full_budget_exhausted_raises(api, monkeypatch):

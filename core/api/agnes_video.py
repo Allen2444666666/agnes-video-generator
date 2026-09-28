@@ -638,16 +638,19 @@ class AgnesVideoAPI:
                             queue_started = time.monotonic()
                             queue_deadline = queue_started + budget
                             logger.warning(
-                                f"[AgnesVideo] {mode_desc}: upstream queue full "
-                                f"(code={code}), entering queue retry track "
-                                f"(budget {budget}s)"
+                                f"[AgnesVideo] {mode_desc}: Agnes video queue full "
+                                f"(HTTP {resp.status_code} · {code}), entering queue "
+                                f"retry track (budget {budget}s)"
                             )
                         waited = time.monotonic() - queue_started
                         if time.monotonic() >= queue_deadline:
+                            # 用户可见：点名 Agnes + 原样报错 + 可行动作（错峰重试）
                             error_msg = (
-                                f"[AgnesVideo] {mode_desc}: upstream video queue "
-                                f"still full after {int(waited)}s (code={code}); "
-                                f"please retry later or switch model"
+                                f"Agnes video queue is full (HTTP {resp.status_code}"
+                                f"{f' · {code}' if code else ''}) and still busy after "
+                                f"{int(waited)}s of retrying — no job was created. "
+                                f"Please retry later, ideally off-peak, or switch to "
+                                f"another video model."
                             )
                             collect_error(
                                 "video", "submit_video",
@@ -666,9 +669,9 @@ class AgnesVideoAPI:
                         delay = _QUEUE_RETRY_BASE_DELAY + random.uniform(0, _QUEUE_RETRY_JITTER)
                         queue_retries += 1
                         logger.warning(
-                            f"[AgnesVideo] Queue full on {mode_desc} (code={code}), "
-                            f"queue retry #{queue_retries} (waited {waited:.0f}s) "
-                            f"in {delay:.0f}s..."
+                            f"[AgnesVideo] Agnes video queue full on {mode_desc} "
+                            f"(HTTP {resp.status_code} · {code}), queue retry "
+                            f"#{queue_retries} (waited {waited:.0f}s) in {delay:.0f}s..."
                         )
                         collect_error(
                             "video", "submit_video",
@@ -685,8 +688,15 @@ class AgnesVideoAPI:
                         )
                         if progress_callback:
                             try:
-                                # 签名与轮询回调对齐：(stage, n, waited_seconds)
-                                progress_callback("queue_full", queue_retries, waited)
+                                # (stage, payload)：payload 带原样报错（HTTP 码 + body code）
+                                # 与等待信息，供前端拼出「Agnes 队列已满 + 原始报错 + 错峰建议」
+                                progress_callback("queue_full", {
+                                    "attempt": queue_retries,
+                                    "waited_s": waited,
+                                    "status": resp.status_code,
+                                    "code": code,
+                                    "message": message,
+                                })
                             except Exception:
                                 logger.debug(
                                     "[AgnesVideo] queue progress callback failed",
