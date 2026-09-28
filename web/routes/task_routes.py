@@ -108,6 +108,12 @@ async def get_task(task_id: str):
     # 后台是否有活跃 pipeline（v6.1）：前端据此区分「运行中/排队中」与
     # 「服务重启后遗留的 pending/queued（需点击续传）」，避免误导用户。
     data["active"] = task_id in app_state.active_pipelines
+    # GA 埋点：合并 error_collector 内存聚合的上游报错（按状态码计数，
+    # 前端轮询到新增量即上报 api_error 事件）。读合并而非写盘，避免与
+    # 流水线自己的 TaskManager 落盘互相覆盖。
+    from core.api.error_collector import get_task_upstream_errors
+
+    data["upstream_errors"] = get_task_upstream_errors(task_id)
     return data
 
 
